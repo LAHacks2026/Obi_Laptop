@@ -120,16 +120,16 @@ export class LlamaSidecar {
         });
 
         this.proc.stderr.on("data", (d) => {
-            console.error("[llama:err]", d.toString());
+            // console.error("[llama:err]", d.toString());
         });
 
         this.proc.on("error", (err) => {
-            console.error("Failed to start process:", err);
+            // console.error("Failed to start process:", err);
             this.status = "error";
         });
 
         this.proc.on("exit", (code, signal) => {
-            console.error(`llama-server exited. code=${code} signal=${signal}`);
+            // console.error(`llama-server exited. code=${code} signal=${signal}`);
             this.proc = null;
             this.status = "stopped";
         });

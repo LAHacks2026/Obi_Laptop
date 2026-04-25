@@ -102,20 +102,20 @@ export class EmbedSidecar {
         });
 
         this.proc.stderr.on("data", (d) => {
-            console.error("[embed:err]", d.toString());
+            // console.error("[embed:err]", d.toString());
         });
 
         this.proc.on("error", (err) => {
             this.proc = null;
             this.status = "error";
-            console.error("embed-server process error:", err);
+            // console.error("embed-server process error:", err);
         });
 
         this.proc.on("exit", (code, signal) => {
             this.proc = null;
             // If it dies unexpectedly while starting/running, mark error
             this.status = (this.status === "starting" || this.status === "running") ? "error" : "stopped";
-            console.error(`embed-server exited. code=${code} signal=${signal}`);
+            // console.error(`embed-server exited. code=${code} signal=${signal}`);
         });
 
         try {

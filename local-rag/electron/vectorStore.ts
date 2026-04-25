@@ -123,7 +123,12 @@ export class VectorStore {
         }
     }
 
-    async search(query: string, limit = 5): Promise<SearchResult[]> {
+
+    async search(
+        query: string,
+        limit = 5,
+        maxDistance = 0.90
+    ): Promise<SearchResult[]> {
         const db = getDb()
         const queryEmbedding = await this.embedOne(query)
 
@@ -154,13 +159,15 @@ export class VectorStore {
             distance: number
         }>
 
-        return rows.map((row) => ({
-            chunkId: row.chunk_id,
-            documentPath: row.document_path,
-            fileName: row.file_name,
-            content: row.content,
-            distance: row.distance,
-        }))
+        return rows
+            .filter((row) => row.distance <= maxDistance)
+            .map((row) => ({
+                chunkId: row.chunk_id,
+                documentPath: row.document_path,
+                fileName: row.file_name,
+                content: row.content,
+                distance: row.distance,
+            }))
     }
 
     async deleteDocument(filePath: string) {

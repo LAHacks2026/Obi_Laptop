@@ -140,42 +140,42 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
 
 
         // Subscribe to tool call events
-        const offTool = window.llama.onToolCallDelta?.((payload: any) => {
-            if (payload?.requestId !== requestId) return;
-            const incoming = payload?.toolCalls;
-            if (!incoming) return;
+        // const offTool = window.llama.onToolCallDelta?.((payload: any) => {
+        //     if (payload?.requestId !== requestId) return;
+        //     const incoming = payload?.toolCalls;
+        //     if (!incoming) return;
 
-            setMessages((prev) => {
-                const i = prev.length - 1;
-                const last = prev[i];
-                if (!last || last.role !== "assistant") return prev;
+        //     setMessages((prev) => {
+        //         const i = prev.length - 1;
+        //         const last = prev[i];
+        //         if (!last || last.role !== "assistant") return prev;
 
-                const existing = last.toolCalls ?? [];
-                const merged = [...existing];
+        //         const existing = last.toolCalls ?? [];
+        //         const merged = [...existing];
 
-                for (const tc of incoming) {
-                    const idx = tc.index ?? 0;
-                    const prevTc = merged[idx] ?? { index: idx, function: { name: "", arguments: "" } };
+        //         for (const tc of incoming) {
+        //             const idx = tc.index ?? 0;
+        //             const prevTc = merged[idx] ?? { index: idx, function: { name: "", arguments: "" } };
 
-                    merged[idx] = {
-                        ...prevTc,
-                        ...tc,
-                        function: {
-                            name: (prevTc.function?.name ?? "") + (tc.function?.name ?? ""),
-                            arguments:
-                                (prevTc.function?.arguments ?? "") + (tc.function?.arguments ?? ""),
-                        },
-                    };
-                }
+        //             merged[idx] = {
+        //                 ...prevTc,
+        //                 ...tc,
+        //                 function: {
+        //                     name: (prevTc.function?.name ?? "") + (tc.function?.name ?? ""),
+        //                     arguments:
+        //                         (prevTc.function?.arguments ?? "") + (tc.function?.arguments ?? ""),
+        //                 },
+        //             };
+        //         }
 
-                const next = prev.slice();
-                next[i] = {
-                    ...last,
-                    toolCalls: merged,
-                };
-                return next;
-            });
-        });
+        //         const next = prev.slice();
+        //         next[i] = {
+        //             ...last,
+        //             toolCalls: merged,
+        //         };
+        //         return next;
+        //     });
+        // });
 
         // Subscribe to streaming events
         const offDelta = window.llama.onChatStreamDelta?.((payload: any) => {
@@ -196,7 +196,7 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
 
         const cleanup = () => {
             try { offDelta?.(); } catch { }
-            try { offTool?.(); } catch { }
+            // try { offTool?.(); } catch { }
             try { offDone?.(); } catch { }
             try { offErr?.(); } catch { }
         };
@@ -240,10 +240,10 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
         }
     };
 
-    const latestAssistantToolCalls =
-        [...messages]
-            .reverse()
-            .find((m) => m.role === "assistant" && m.toolCalls?.length)?.toolCalls ?? [];
+    // const latestAssistantToolCalls =
+    //     [...messages]
+    //         .reverse()
+    //         .find((m) => m.role === "assistant" && m.toolCalls?.length)?.toolCalls ?? [];
 
     const buildRagSystemMessage = (results: SearchResult[]): Msg | null => {
         if (!results.length) return null;
@@ -333,8 +333,9 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
 
                     canvasContent={renderCanvasContent()}
 
-                    bottomDock={<div style={{ padding: 12, borderTop: "1px solid #333", fontSize: 12 }}>
-                        <div style={{ fontWeight: 600, marginBottom: 8 }}>Tool Call Debug</div>
+                    bottomDock={
+                        <div style={{ padding: 12, borderTop: "1px solid #333", fontSize: 12 }}>
+                            {/* <div style={{ fontWeight: 600, marginBottom: 8 }}>Tool Call Debug</div>
 
                         {!latestAssistantToolCalls.length ? (
                             <div>No tool calls yet.</div>
@@ -367,8 +368,9 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
                                     </div>
                                 </div>
                             ))
-                        )}
-                    </div>}
+                        )} */}
+                        </div>
+                    }
                 />
             }
         />

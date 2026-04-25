@@ -33,7 +33,7 @@ export class LlamaSidecar {
 
     private chatModelPath() {
         const base = this.resourcesBase();
-        const modelType = "Qwen3.5-2B.Q4_K_M.gguf";
+        const modelType = "gemma-4-E2B-it-Q4_K_M.gguf";
         return path.join(base, "models", modelType);
     }
 

@@ -1,11 +1,12 @@
 import { BrowserWindow, dialog, ipcMain } from "electron"
 import { fileWatcher } from "../services.js";
+import { IndexingOptions } from "../indexingRules.js";
 
 /* - FileWatcher IPC handler -----------------------
 */
 export function registerFileWatcherIpc() {
-    ipcMain.handle("watcher:start", async (_event, rootPath: string) => {
-        await fileWatcher.start(rootPath)
+    ipcMain.handle("watcher:start", async (_event, rootPath: string, options?: IndexingOptions) => {
+        await fileWatcher.start(rootPath, options)
         return fileWatcher.getStatus()
     })
 
@@ -18,7 +19,7 @@ export function registerFileWatcherIpc() {
         return fileWatcher.getStatus()
     })
 
-    ipcMain.handle("watcher:pickDirectory", async (event) => {
+    ipcMain.handle("watcher:pickDirectory", async (event, options?: IndexingOptions) => {
         const win = BrowserWindow.fromWebContents(event.sender)
         const result = await dialog.showOpenDialog(win!, {
             properties: ["openDirectory"],
@@ -26,11 +27,11 @@ export function registerFileWatcherIpc() {
         })
 
         if (result.canceled || result.filePaths.length === 0) {
-            return { canceled: true, path: null }
+            return { canceled: true, path: null, ...fileWatcher.getStatus() }
         }
 
         const selectedPath = result.filePaths[0]
-        await fileWatcher.setPath(selectedPath)
-        return { canceled: false, path: selectedPath }
+        await fileWatcher.setPath(selectedPath, options)
+        return { canceled: false, path: selectedPath, ...fileWatcher.getStatus() }
     })
 }

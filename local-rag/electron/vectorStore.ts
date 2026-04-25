@@ -2,39 +2,87 @@ import fs from "node:fs"
 import path from "node:path"
 import { getDb } from "./database"
 import { SearchResult } from "../src/types/global"
+import { IndexedModality, IndexingOptions, IndexingRules } from "./indexingRules"
 
 type EmbedOneFn = (text: string) => Promise<number[]>
 type EmbedManyFn = (texts: string[]) => Promise<number[][]>
-
-const TEXT_FILE_EXTENSIONS = new Set([".txt", ".md"])
+type ImageEmbedFn = (imagePath: string) => Promise<number[]>
+type ImageQueryEmbedFn = (queryText: string) => Promise<number[]>
+type IndexingStats = {
+    scanned: number
+    indexed: number
+    skipped: number
+    textIndexed: number
+    codeIndexed: number
+    imageIndexed: number
+    lastIndexedAtMs: number | null
+}
+type ChunkWithMeta = {
+    content: string
+    sectionTitle: string
+    charStart: number
+    charEnd: number
+}
 
 export class VectorStore {
+    private stats: IndexingStats = {
+        scanned: 0,
+        indexed: 0,
+        skipped: 0,
+        textIndexed: 0,
+        codeIndexed: 0,
+        imageIndexed: 0,
+        lastIndexedAtMs: null,
+    }
+
     constructor(
         private readonly embedOne: EmbedOneFn,
         private readonly embedMany: EmbedManyFn,
-        private readonly embeddingDimensions: number
+        private readonly embedImage: ImageEmbedFn,
+        private readonly embedImageQuery: ImageQueryEmbedFn,
+        private readonly embeddingDimensions: number,
+        private readonly imageEmbeddingDimensions: number
     ) { }
 
-    async indexDirectory(rootPath: string) {
-        const files = walkDirectory(rootPath)
+    async indexDirectory(rootPath: string, options: IndexingOptions = {}) {
+        const rules = new IndexingRules(rootPath, options)
+        const files = walkDirectory(rootPath, rules)
         let indexedCount = 0
         let skippedCount = 0
 
         for (const filePath of files) {
-            if (!shouldIndexFile(filePath)) {
+            const modality = rules.getFileModality(filePath)
+            if (!modality) {
                 skippedCount += 1
                 continue
             }
 
-            const result = await this.indexFile(filePath)
-            if (result.skipped) skippedCount += 1
-            else indexedCount += 1
+            const result = await this.indexFile(filePath, modality)
+            if (result.skipped) {
+                skippedCount += 1
+            } else {
+                indexedCount += 1
+            }
         }
 
         return { indexedCount, skippedCount }
     }
 
-    async indexFile(filePath: string) {
+    async indexFile(filePath: string, modality?: IndexedModality) {
+        this.stats.scanned += 1
+        const indexedModality = modality ?? inferModality(filePath)
+        if (!indexedModality) {
+            this.stats.skipped += 1
+            return { skipped: true as const, reason: "unsupported_modality" as const }
+        }
+        if (indexedModality === "image") {
+            return this.indexImage(filePath)
+        }
+
+        return this.indexTextFile(filePath, indexedModality)
+    }
+
+    private async indexTextFile(filePath: string, modality: IndexedModality = "text") {
         const db = getDb()
 
         const stat = fs.statSync(filePath)
@@ -45,20 +93,23 @@ export class VectorStore {
             .get(filePath) as { id: number; updated_at_ms: number } | undefined
 
         if (existingDoc && existingDoc.updated_at_ms === updatedAtMs) {
+            this.stats.skipped += 1
             return { skipped: true as const, reason: "unchanged" as const }
         }
 
         const rawText = safeReadTextFile(filePath)
         if (!rawText.trim()) {
+            this.stats.skipped += 1
             return { skipped: true as const, reason: "empty" as const }
         }
 
-        const chunks = chunkText(rawText, 800, 120)
+        const chunks = chunkTextWithMetadata(filePath, rawText, 800, 120)
         if (chunks.length === 0) {
+            this.stats.skipped += 1
             return { skipped: true as const, reason: "no_chunks" as const }
         }
 
-        const embeddings = await this.embedMany(chunks)
+        const embeddings = await this.embedMany(chunks.map((chunk) => chunk.content))
 
         for (const embedding of embeddings) {
             if (embedding.length !== this.embeddingDimensions) {
@@ -76,6 +127,12 @@ export class VectorStore {
 
                 db.prepare(`
           DELETE FROM chunk_embeddings
+          WHERE chunk_id IN (
+            SELECT id FROM chunks WHERE document_id = ?
+          )
+        `).run(documentId)
+                db.prepare(`
+          DELETE FROM chunks_fts
           WHERE chunk_id IN (
             SELECT id FROM chunks WHERE document_id = ?
           )
@@ -98,47 +155,118 @@ export class VectorStore {
             }
 
             const insertChunk = db.prepare(
-                `INSERT INTO chunks (document_id, chunk_index, content)
-                VALUES (?, ?, ?)`
+                `INSERT INTO chunks (document_id, chunk_index, content, section_title, char_start, char_end)
+                VALUES (?, ?, ?, ?, ?, ?)`
             )
 
             const insertEmbedding = db.prepare(
                 `INSERT INTO chunk_embeddings (chunk_id, embedding)
                 VALUES (CAST(? AS INTEGER), vec_f32(?))`
             )
+            const insertLexical = db.prepare(
+                `INSERT INTO chunks_fts (content, chunk_id, document_path)
+                VALUES (?, ?, ?)`
+            )
 
             for (let i = 0; i < chunks.length; i += 1) {
-                const chunkResult = insertChunk.run(documentId!, i, chunks[i])
+                const chunk = chunks[i]
+                const chunkResult = insertChunk.run(
+                    documentId!,
+                    i,
+                    chunk.content,
+                    chunk.sectionTitle,
+                    chunk.charStart,
+                    chunk.charEnd
+                )
                 const chunkId = chunkResult.lastInsertRowid
 
                 insertEmbedding.run(chunkId, serializeVector(embeddings[i]))
+                insertLexical.run(chunk.content, chunkId, filePath)
             }
         })
 
         tx()
 
+        this.recordIndexed(modality === "code" ? "code" : "text")
         return {
             skipped: false as const,
             chunkCount: chunks.length,
         }
     }
 
+    private async indexImage(filePath: string) {
+        const db = getDb()
+        const stat = fs.statSync(filePath)
+        const updatedAtMs = Math.trunc(stat.mtimeMs)
+
+        const existingImage = db
+            .prepare("SELECT id, updated_at_ms FROM image_documents WHERE path = ?")
+            .get(filePath) as { id: number; updated_at_ms: number } | undefined
+
+        if (existingImage && existingImage.updated_at_ms === updatedAtMs) {
+            this.stats.skipped += 1
+            return { skipped: true as const, reason: "unchanged" as const }
+        }
+
+        const embedding = await this.embedImage(filePath)
+        if (embedding.length !== this.imageEmbeddingDimensions) {
+            throw new Error(
+                `Image embedding dimension mismatch. Expected ${this.imageEmbeddingDimensions}, got ${embedding.length}`
+            )
+        }
+
+        let imageId!: number
+        const tx = db.transaction(() => {
+            if (existingImage) {
+                imageId = existingImage.id
+                db.prepare("DELETE FROM image_embeddings_clip WHERE image_id = ?").run(imageId)
+                db.prepare(`
+                    UPDATE image_documents
+                    SET file_name = ?, updated_at_ms = ?, indexed_at_ms = ?
+                    WHERE id = ?
+                `).run(path.basename(filePath), updatedAtMs, Date.now(), imageId)
+            } else {
+                const insertResult = db.prepare(`
+                    INSERT INTO image_documents (path, file_name, updated_at_ms, indexed_at_ms, width, height)
+                    VALUES (?, ?, ?, ?, NULL, NULL)
+                `).run(filePath, path.basename(filePath), updatedAtMs, Date.now())
+                imageId = Number(insertResult.lastInsertRowid)
+            }
+
+            db.prepare(`
+                INSERT INTO image_embeddings_clip (image_id, embedding)
+                VALUES (CAST(? AS INTEGER), vec_f32(?))
+            `).run(imageId, serializeVector(embedding))
+        })
+
+        tx()
+        this.recordIndexed("image")
+        return { skipped: false as const, modality: "image" as const }
+    }
+
     async search(query: string, limit = 5): Promise<SearchResult[]> {
         const db = getDb()
         const queryEmbedding = await this.embedOne(query)
+        const imageQueryEmbedding = await this.embedImageQuery(query)
 
         if (queryEmbedding.length !== this.embeddingDimensions) {
             throw new Error(
                 `Embedding dimension mismatch. Expected ${this.embeddingDimensions}, got ${queryEmbedding.length}`
             )
         }
+        if (imageQueryEmbedding.length !== this.imageEmbeddingDimensions) {
+            throw new Error(
+                `Image query embedding dimension mismatch. Expected ${this.imageEmbeddingDimensions}, got ${imageQueryEmbedding.length}`
+            )
+        }
 
-        const rows = db.prepare(
+        const textSemanticRows = db.prepare(
             `SELECT
                 c.id AS chunk_id,
                 d.path AS document_path,
                 d.file_name AS file_name,
                 c.content AS content,
+                c.section_title AS section_title,
                 distance
             FROM chunk_embeddings
             JOIN chunks c ON c.id = chunk_embeddings.chunk_id
@@ -151,15 +279,61 @@ export class VectorStore {
             document_path: string
             file_name: string
             content: string
+            section_title: string
             distance: number
         }>
 
-        return rows.map((row) => ({
-            chunkId: row.chunk_id,
-            documentPath: row.document_path,
-            fileName: row.file_name,
+        const textLexicalRows = db.prepare(
+            `SELECT
+                c.id AS chunk_id,
+                d.path AS document_path,
+                d.file_name AS file_name,
+                c.content AS content,
+                c.section_title AS section_title,
+                bm25(chunks_fts) AS bm25_score
+            FROM chunks_fts
+            JOIN chunks c ON c.id = chunks_fts.chunk_id
+            JOIN documents d ON d.path = chunks_fts.document_path
+            WHERE chunks_fts MATCH ?
+            ORDER BY bm25_score ASC
+            LIMIT ?`
+        ).all(buildFtsQuery(query), limit) as Array<{
+            chunk_id: number
+            document_path: string
+            file_name: string
+            content: string
+            section_title: string
+            bm25_score: number
+        }>
+
+        const imageRows = db.prepare(
+            `SELECT
+                i.id AS image_id,
+                i.path AS document_path,
+                i.file_name AS file_name,
+                distance
+            FROM image_embeddings_clip
+            JOIN image_documents i ON i.id = image_embeddings_clip.image_id
+            WHERE embedding MATCH ?
+                AND k = ?
+            ORDER BY distance ASC`
+        ).all(serializeVector(imageQueryEmbedding), limit) as Array<{
+            image_id: number
+            document_path: string
+            file_name: string
+            distance: number
+        }>
+
+        const merged = mergeRankedResults(textSemanticRows, textLexicalRows, imageRows)
+
+        return merged.slice(0, limit).map((row) => ({
+            chunkId: row.chunkId,
+            documentPath: row.documentPath,
+            fileName: row.fileName,
             content: row.content,
             distance: row.distance,
+            modality: row.modality,
+            sectionTitle: row.sectionTitle,
         }))
     }
 
@@ -170,28 +344,50 @@ export class VectorStore {
             .prepare("SELECT id FROM documents WHERE path = ?")
             .get(filePath) as { id: number } | undefined
 
-        if (!row) {
-            return { deleted: false }
+        if (row) {
+            const tx = db.transaction(() => {
+                db.prepare(`DELETE FROM chunk_embeddings WHERE chunk_id IN (SELECT id FROM chunks WHERE document_id = ?)`).run(row.id);
+                db.prepare(`DELETE FROM chunks_fts WHERE chunk_id IN (SELECT id FROM chunks WHERE document_id = ?)`).run(row.id);
+                db.prepare(`DELETE FROM chunks WHERE document_id = ?`).run(row.id);
+                db.prepare(`DELETE FROM documents WHERE id = ?`).run(row.id);
+            });
+            tx();
         }
 
-        // Wrap in a transaction to avoid partial deletes
-        const tx = db.transaction(() => {
-            db.prepare(`DELETE FROM chunk_embeddings WHERE chunk_id IN (SELECT id FROM chunks WHERE document_id = ?)`).run(row.id);
-            db.prepare(`DELETE FROM chunks WHERE document_id = ?`).run(row.id);
-            db.prepare(`DELETE FROM documents WHERE id = ?`).run(row.id);
-        });
-        tx();
+        const imageRow = db
+            .prepare("SELECT id FROM image_documents WHERE path = ?")
+            .get(filePath) as { id: number } | undefined
+        if (imageRow) {
+            const imageTx = db.transaction(() => {
+                db.prepare(`DELETE FROM image_embeddings_clip WHERE image_id = ?`).run(imageRow.id);
+                db.prepare(`DELETE FROM image_documents WHERE id = ?`).run(imageRow.id);
+            });
+            imageTx();
+        }
 
-        return { deleted: true }
+        return { deleted: Boolean(row || imageRow) }
+    }
+
+    getStats() {
+        return { ...this.stats }
+    }
+
+    private recordIndexed(modality: IndexedModality) {
+        this.stats.indexed += 1
+        this.stats.lastIndexedAtMs = Date.now()
+        if (modality === "text") this.stats.textIndexed += 1
+        if (modality === "code") this.stats.codeIndexed += 1
+        if (modality === "image") this.stats.imageIndexed += 1
     }
 }
 
 
 // Helpers
-function walkDirectory(rootPath: string): string[] {
+function walkDirectory(rootPath: string, rules: IndexingRules): string[] {
     const results: string[] = []
 
     function walk(currentPath: string) {
+        if (rules.shouldSkipDirectory(currentPath)) return
         const entries = fs.readdirSync(currentPath, { withFileTypes: true })
 
         for (const entry of entries) {
@@ -200,6 +396,7 @@ function walkDirectory(rootPath: string): string[] {
             if (entry.isDirectory()) {
                 walk(fullPath)
             } else if (entry.isFile()) {
+                if (rules.shouldSkipFile(fullPath)) continue
                 results.push(fullPath)
             }
         }
@@ -209,26 +406,29 @@ function walkDirectory(rootPath: string): string[] {
     return results
 }
 
-function shouldIndexFile(filePath: string) {
-    return TEXT_FILE_EXTENSIONS.has(path.extname(filePath).toLowerCase())
-}
-
 function safeReadTextFile(filePath: string) {
     return fs.readFileSync(filePath, "utf8")
 }
 
-function chunkText(text: string, chunkSize = 800, overlap = 120) {
+function chunkText(text: string, chunkSize = 800, overlap = 120): ChunkWithMeta[] {
     const normalized = text.replace(/\r\n/g, "\n").trim()
     if (!normalized) return []
 
-    const chunks: string[] = []
+    const chunks: ChunkWithMeta[] = []
     let start = 0
 
     while (start < normalized.length) {
         const end = Math.min(start + chunkSize, normalized.length)
         const chunk = normalized.slice(start, end).trim()
 
-        if (chunk) chunks.push(chunk)
+        if (chunk) {
+            chunks.push({
+                content: chunk,
+                sectionTitle: "",
+                charStart: start,
+                charEnd: end,
+            })
+        }
         if (end === normalized.length) break
 
         start = Math.max(end - overlap, start + 1)
@@ -239,5 +439,237 @@ function chunkText(text: string, chunkSize = 800, overlap = 120) {
 
 function serializeVector(vector: number[]): Buffer {
     return Buffer.from(new Float32Array(vector).buffer)
+}
+
+function inferModality(filePath: string): IndexedModality | null {
+    const extension = path.extname(filePath).toLowerCase()
+    if ([".txt", ".md", ".mdx", ".json", ".csv", ".yaml", ".yml", ".toml", ".xml", ".log", ".ini", ".sql"].includes(extension)) return "text"
+    if ([".ts", ".tsx", ".js", ".jsx", ".py", ".java", ".go", ".rs", ".c", ".cpp", ".h", ".hpp", ".cs", ".rb"].includes(extension)) return "code"
+    if ([".png", ".jpg", ".jpeg", ".webp", ".gif"].includes(extension)) return "image"
+    return null
+}
+
+function chunkTextWithMetadata(filePath: string, text: string, chunkSize: number, overlap: number): ChunkWithMeta[] {
+    const extension = path.extname(filePath).toLowerCase()
+    if (extension === ".md" || extension === ".mdx") {
+        return chunkMarkdownText(text, chunkSize, overlap)
+    }
+    if ([".ts", ".tsx", ".js", ".jsx", ".py", ".java", ".go", ".rs", ".c", ".cpp", ".h", ".hpp", ".cs", ".rb"].includes(extension)) {
+        return chunkCodeText(text, chunkSize, overlap)
+    }
+    return chunkText(text, chunkSize, overlap)
+}
+
+function chunkMarkdownText(text: string, chunkSize: number, overlap: number): ChunkWithMeta[] {
+    const normalized = text.replace(/\r\n/g, "\n").trim()
+    if (!normalized) return []
+
+    const headerRegex = /^(#{1,6})\s+(.+)$/gm
+    const sections: Array<{ title: string; start: number; end: number }> = []
+    let match: RegExpExecArray | null
+    while ((match = headerRegex.exec(normalized)) !== null) {
+        sections.push({
+            title: match[2].trim(),
+            start: match.index,
+            end: normalized.length,
+        })
+    }
+
+    for (let i = 0; i < sections.length; i += 1) {
+        const next = sections[i + 1]
+        sections[i].end = next ? next.start : normalized.length
+    }
+
+    if (sections.length === 0) {
+        return chunkText(normalized, chunkSize, overlap)
+    }
+
+    const chunks: ChunkWithMeta[] = []
+    for (const section of sections) {
+        const sectionText = normalized.slice(section.start, section.end).trim()
+        if (!sectionText) continue
+        const sectionChunks = chunkText(sectionText, chunkSize, overlap).map((chunk) => ({
+            ...chunk,
+            sectionTitle: section.title,
+            charStart: chunk.charStart + section.start,
+            charEnd: chunk.charEnd + section.start,
+        }))
+        chunks.push(...sectionChunks)
+    }
+    return chunks
+}
+
+function chunkCodeText(text: string, chunkSize: number, overlap: number): ChunkWithMeta[] {
+    const normalized = text.replace(/\r\n/g, "\n")
+    if (!normalized.trim()) return []
+
+    const boundaryRegex = /^(?:\s*(?:export\s+)?(?:async\s+)?function\s+\w+|\s*(?:export\s+)?class\s+\w+|\s*def\s+\w+\s*\(|\s*(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?\(|\s*interface\s+\w+)/gm
+    const boundaries: number[] = [0]
+    let match: RegExpExecArray | null
+    while ((match = boundaryRegex.exec(normalized)) !== null) {
+        if (!boundaries.includes(match.index)) {
+            boundaries.push(match.index)
+        }
+    }
+    boundaries.push(normalized.length)
+    boundaries.sort((a, b) => a - b)
+
+    const chunks: ChunkWithMeta[] = []
+    for (let i = 0; i < boundaries.length - 1; i += 1) {
+        const start = boundaries[i]
+        const end = boundaries[i + 1]
+        const block = normalized.slice(start, end).trim()
+        if (!block) continue
+
+        if (block.length <= chunkSize) {
+            const firstLine = block.split("\n")[0]?.trim() ?? "code-block"
+            chunks.push({
+                content: block,
+                sectionTitle: firstLine.slice(0, 120),
+                charStart: start,
+                charEnd: end,
+            })
+            continue
+        }
+
+        const fallbackChunks = chunkText(block, chunkSize, overlap).map((chunk) => ({
+            ...chunk,
+            sectionTitle: block.split("\n")[0]?.trim().slice(0, 120) ?? "code-block",
+            charStart: chunk.charStart + start,
+            charEnd: chunk.charEnd + start,
+        }))
+        chunks.push(...fallbackChunks)
+    }
+
+    return chunks
+}
+
+type RankedResult = {
+    chunkId: number
+    documentPath: string
+    fileName: string
+    content: string
+    modality: "text" | "image"
+    sectionTitle: string
+    score: number
+    distance: number
+}
+
+function buildFtsQuery(query: string): string {
+    const tokens = query
+        .toLowerCase()
+        .split(/\s+/)
+        .map((token) => token.replace(/[^\p{L}\p{N}_-]/gu, "").trim())
+        .filter(Boolean)
+
+    if (tokens.length === 0) return "\"\""
+    return tokens.map((token) => `"${token}"`).join(" OR ")
+}
+
+function mergeRankedResults(
+    textSemanticRows: Array<{
+        chunk_id: number
+        document_path: string
+        file_name: string
+        content: string
+        section_title: string
+        distance: number
+    }>,
+    textLexicalRows: Array<{
+        chunk_id: number
+        document_path: string
+        file_name: string
+        content: string
+        section_title: string
+        bm25_score: number
+    }>,
+    imageRows: Array<{
+        image_id: number
+        document_path: string
+        file_name: string
+        distance: number
+    }>
+): RankedResult[] {
+    const rrfK = 60
+    const scoreMap = new Map<string, RankedResult>()
+
+    const upsertScore = (
+        key: string,
+        base: Omit<RankedResult, "score" | "distance">,
+        rank: number,
+        weight: number
+    ) => {
+        const existing = scoreMap.get(key)
+        const increment = weight / (rrfK + rank)
+        if (!existing) {
+            scoreMap.set(key, {
+                ...base,
+                score: increment,
+                distance: Number.POSITIVE_INFINITY,
+            })
+            return
+        }
+        existing.score += increment
+    }
+
+    textSemanticRows.forEach((row, index) => {
+        const key = `text:${row.chunk_id}`
+        upsertScore(
+            key,
+            {
+                chunkId: row.chunk_id,
+                documentPath: row.document_path,
+                fileName: row.file_name,
+                content: row.content,
+                modality: "text",
+                sectionTitle: row.section_title ?? "",
+            },
+            index + 1,
+            0.55
+        )
+    })
+
+    textLexicalRows.forEach((row, index) => {
+        const key = `text:${row.chunk_id}`
+        upsertScore(
+            key,
+            {
+                chunkId: row.chunk_id,
+                documentPath: row.document_path,
+                fileName: row.file_name,
+                content: row.content,
+                modality: "text",
+                sectionTitle: row.section_title ?? "",
+            },
+            index + 1,
+            0.3
+        )
+    })
+
+    imageRows.forEach((row, index) => {
+        const key = `image:${row.image_id}`
+        upsertScore(
+            key,
+            {
+                chunkId: row.image_id,
+                documentPath: row.document_path,
+                fileName: row.file_name,
+                content: `[image] ${row.file_name}`,
+                modality: "image",
+                sectionTitle: "",
+            },
+            index + 1,
+            0.45
+        )
+    })
+
+    const merged = Array.from(scoreMap.values())
+        .sort((a, b) => b.score - a.score)
+        .map((result) => ({
+            ...result,
+            distance: 1 / (result.score + 1e-9),
+        }))
+
+    return merged
 }
 

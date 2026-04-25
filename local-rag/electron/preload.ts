@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld("api", {
 
         search: (query: string, limit?: number) =>
             ipcRenderer.invoke("rag:search", query, limit),
+        stats: () =>
+            ipcRenderer.invoke("rag:stats"),
     },
 
     embedder: {
@@ -53,8 +55,8 @@ contextBridge.exposeInMainWorld("api", {
 })
 
 contextBridge.exposeInMainWorld("watcher", {
-    start: (rootPath: string) => ipcRenderer.invoke("watcher:start", rootPath),
+    start: (rootPath: string, options?: { includeCodeFiles?: boolean; indexAllFiles?: boolean }) => ipcRenderer.invoke("watcher:start", rootPath, options),
     stop: () => ipcRenderer.invoke("watcher:stop"),
     status: () => ipcRenderer.invoke("watcher:status"),
-    pickDirectory: () => ipcRenderer.invoke("watcher:pickDirectory"),
+    pickDirectory: (options?: { includeCodeFiles?: boolean; indexAllFiles?: boolean }) => ipcRenderer.invoke("watcher:pickDirectory", options),
 })

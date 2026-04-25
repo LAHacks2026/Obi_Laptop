@@ -1,18 +1,31 @@
-import { Box, Button, Typography, Tooltip, Icon } from "@mui/material";
+import { Box, Button, Typography, Tooltip, Icon, FormControlLabel, Checkbox } from "@mui/material";
 import { useState } from "react";
 
 function FileWatcherPicker() {
     const [watchedPath, setWatchedPath] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [includeCodeFiles, setIncludeCodeFiles] = useState(false);
+    const [indexAllFiles, setIndexAllFiles] = useState(true);
+    const [stats, setStats] = useState<{
+        scanned: number;
+        indexed: number;
+        skipped: number;
+        textIndexed: number;
+        codeIndexed: number;
+        imageIndexed: number;
+        lastIndexedAtMs: number | null;
+    } | null>(null);
 
     async function handlePick() {
         setLoading(true);
         setError(null);
         try {
-            const result = await window.watcher.pickDirectory();
+            const result = await window.watcher.pickDirectory({ includeCodeFiles, indexAllFiles });
             if (!result.canceled && result.path) {
                 setWatchedPath(result.path);
+                setStats(result.indexingStats);
+                setLoading(false);
             } else {
                 setError("Failed to open directory. Please try again.");
                 setLoading(false);
@@ -92,12 +105,37 @@ function FileWatcherPicker() {
             >
                 {loading ? "Opening…" : "Choose folder to watch"}
             </Button>
+            <FormControlLabel
+                sx={{ mt: 1 }}
+                control={
+                    <Checkbox
+                        checked={includeCodeFiles}
+                        onChange={(event) => setIncludeCodeFiles(event.target.checked)}
+                    />
+                }
+                label="Include code files (.ts, .js, .py, etc.)"
+            />
+            <FormControlLabel
+                control={
+                    <Checkbox
+                        checked={indexAllFiles}
+                        onChange={(event) => setIndexAllFiles(event.target.checked)}
+                    />
+                }
+                label="Index all files (best effort, no skip filtering)"
+            />
 
             {watchedPath && (
                 <Box sx={{ mt: 2, p: 1, bgcolor: "#f9f9f9", borderRadius: 1 }}>
                     <Typography variant="body2" color="#666" sx={{ fontSize: 14, fontWeight: 500 }}>
                         📂 Watching: <code>{watchedPath}</code>
                     </Typography>
+                    {stats && (
+                        <Typography variant="body2" color="#666" sx={{ mt: 1, fontSize: 13 }}>
+                            Indexed {stats.indexed} files ({stats.textIndexed} text, {stats.codeIndexed} code, {stats.imageIndexed} images), skipped {stats.skipped}, scanned {stats.scanned}
+                            {stats.lastIndexedAtMs ? `, last update ${new Date(stats.lastIndexedAtMs).toLocaleTimeString()}` : ""}
+                        </Typography>
+                    )}
                 </Box>
             )}
         </Box>

@@ -97,11 +97,13 @@ export function registerLlamaStreamIpc() {
                                 event.sender.send("llama:chat_stream_delta", { requestId, delta: textDelta });
                             }
 
+                            /* 
                             const toolCalls = delta?.tool_calls;
                             if (toolCalls) {
                                 toolAccumulator.addDeltas(toolCalls);
                                 event.sender.send("llama:tool_call_delta", { requestId, toolCalls }); // sends to renderer
                             }
+                            */
                         } catch (err) {
                             // ignore malformed chunk
                             console.warn("Malformed SSE JSON: ", data, err);

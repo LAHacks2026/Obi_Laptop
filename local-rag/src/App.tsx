@@ -38,7 +38,7 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
     // Messages
     const [input, setInput] = useState("");
     const [messages, setMessages] = useState<Msg[]>([
-        { role: "system", content: "You are a helpful assistant. Use the search_files tool when additional context is needed" },
+        { role: "system", content: "You are a helpful assistant. Use the search_files tool when additional context is needed." },
     ]);
 
     // Chat Stream
@@ -133,10 +133,11 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
             setLastError(`RAG search failed: ${String(e?.message ?? e)}`);
         }
 
-        const nextMessages = [...history, userMsg];
-        // ragSystemMsg
-        //     ? [...history, ragSystemMsg, userMsg]
-        //     : [...history, userMsg];
+        const nextMessages = ragSystemMsg
+            ? [...history, ragSystemMsg, userMsg]
+            : [...history, userMsg];
+        //[...history, userMsg];
+
 
         // Subscribe to tool call events
         const offTool = window.llama.onToolCallDelta?.((payload: any) => {

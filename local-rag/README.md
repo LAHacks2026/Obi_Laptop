@@ -37,21 +37,3 @@ Download llama.cpp binaries
 Replace the binaries in resources/bin
 
 In progress...
-
----
-
-## General
-
-Before trying to push a change into the repo, please understand the below concepts.
-
-- What is the main branch?
-- What is a branch?
-- What is a merge request?
-
-- How to commit
-- How to push
-- how to pull
-
-- How to handle a merge conflict
-
-- [Git Basics](https://webtuu.com/blog/04/git-basics-branching-merging-push-to-github)

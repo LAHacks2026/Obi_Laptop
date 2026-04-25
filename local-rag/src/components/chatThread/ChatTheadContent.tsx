@@ -331,9 +331,30 @@ function ChatThreadContent({
                                         size="small"
                                         variant="outlined"
                                         label={`${r.fileName} · ${r.distance.toFixed(2)}`}
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={async () => {
+                                            const res = await window.api.openIndexedPath(
+                                                r.documentPath
+                                            );
+                                            if (!res.ok) {
+                                                console.warn(
+                                                    "[openIndexedPath]",
+                                                    r.documentPath,
+                                                    res.error
+                                                );
+                                            }
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" || e.key === " ") {
+                                                e.preventDefault();
+                                                (e.currentTarget as HTMLElement).click();
+                                            }
+                                        }}
                                         sx={{
                                             maxWidth: 220,
                                             height: 24,
+                                            cursor: "pointer",
                                             backgroundColor: "transparent",
                                             borderColor: theme.palette.outline.variant,
                                             "& .MuiChip-label": {
@@ -343,6 +364,9 @@ function ChatThreadContent({
                                                 whiteSpace: "nowrap",
                                                 overflow: "hidden",
                                                 textOverflow: "ellipsis",
+                                            },
+                                            "&:hover": {
+                                                borderColor: theme.palette.primary.main,
                                             },
                                         }}
                                     />

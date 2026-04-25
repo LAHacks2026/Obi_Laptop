@@ -10,6 +10,8 @@ export class LlamaSidecar {
     private port: number = 0;
     private baseUrl: string = "";
     private modelType: string = "";
+    /** Coalesces concurrent `start()` (e.g. React Strict Mode double-invoke). */
+    private startPromise: Promise<void> | null = null;
 
     getStatus() {
         return { status: this.status, port: this.port, baseUrl: this.baseUrl, modelType: this.modelType };
@@ -33,7 +35,7 @@ export class LlamaSidecar {
 
     private chatModelPath() {
         const base = this.resourcesBase();
-        const modelType = "gemma-4-E2B-it-Q4_K_M.gguf";
+        const modelType = "gemma-4-E2B-it-Q3_K_M.gguf";
         return path.join(base, "models", modelType);
     }
 
@@ -51,7 +53,7 @@ export class LlamaSidecar {
         });
     }
 
-    private async waitUntilReady(baseUrl: string, timeoutMs = 20_000) {
+    private async waitUntilReady(baseUrl: string, timeoutMs = 120_000) {
         const start = Date.now();
         while (Date.now() - start < timeoutMs) {
             try {
@@ -66,6 +68,16 @@ export class LlamaSidecar {
     }
 
     async start() {
+        if (this.status === "running" && this.proc) return;
+        if (!this.startPromise) {
+            this.startPromise = this.runStart().finally(() => {
+                this.startPromise = null;
+            });
+        }
+        await this.startPromise;
+    }
+
+    private async runStart() {
         if (this.proc || this.status === "starting" || this.status === "running") return;
 
         this.status = "starting";
@@ -108,7 +120,7 @@ export class LlamaSidecar {
         });
 
         this.proc.stderr.on("data", (d) => {
-            // console.error("[llama:err]", d.toString());
+            console.error("[llama:err]", d.toString());
         });
 
         this.proc.on("error", (err) => {

@@ -18,6 +18,10 @@ declare global {
                 >
             }
 
+            openIndexedPath: (
+                filePath: string
+            ) => Promise<{ ok: true } | { ok: false; error: string }>
+
             embedder: {
                 start: () => Promise<{
                     status: string

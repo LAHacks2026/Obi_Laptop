@@ -17,6 +17,8 @@ export class EmbedSidecar {
     private port: number = 0;
     private baseUrl: string = "";
     private hostUrl: string = "127.0.0.1";
+    /** Coalesces concurrent `start()` (e.g. React Strict Mode double-invoke). */
+    private startPromise: Promise<void> | null = null;
 
     // Helpers
     private resourcesBase() {
@@ -57,6 +59,16 @@ export class EmbedSidecar {
 
     // Lifecycle
     async start() {
+        if (this.status === "running" && this.proc) return;
+        if (!this.startPromise) {
+            this.startPromise = this.runStart().finally(() => {
+                this.startPromise = null;
+            });
+        }
+        await this.startPromise;
+    }
+
+    private async runStart() {
         if (this.proc || this.status === "starting" || this.status === "running") return;
 
         this.status = "starting";
@@ -87,6 +99,10 @@ export class EmbedSidecar {
                         : {}),
             },
             stdio: "pipe",
+        });
+
+        this.proc.stderr.on("data", (d) => {
+            console.error("[embed:err]", d.toString());
         });
 
         this.proc.on("error", (err) => {
@@ -125,7 +141,7 @@ export class EmbedSidecar {
         return { status: this.status, port: this.port, baseUrl: this.baseUrl };
     }
 
-    private async waitUntilReady(baseUrl: string, timeoutMs = 15_000) {
+    private async waitUntilReady(baseUrl: string, timeoutMs = 120_000) {
         const start = Date.now();
         while (Date.now() - start < timeoutMs) {
             try {

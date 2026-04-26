@@ -2,9 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import ignore, { Ignore } from "ignore";
 
-const DEFAULT_IGNORED_DIRS = new Set([
+const ALWAYS_IGNORED_DIRS = new Set([
     ".git",
     "node_modules",
+]);
+
+const DEFAULT_IGNORED_DIRS = new Set([
     ".next",
     ".nuxt",
     "dist",
@@ -93,12 +96,12 @@ export class IndexingRules {
     shouldSkipDirectory(dirPath: string): boolean {
         const resolvedPath = path.resolve(dirPath);
         if (!resolvedPath.startsWith(this.rootPath)) return true;
-        if (this.options.indexAllFiles) return false;
-
         const relativePath = this.toRelativePath(resolvedPath);
         if (!relativePath) return false;
         const baseName = path.basename(resolvedPath);
 
+        if (ALWAYS_IGNORED_DIRS.has(baseName)) return true;
+        if (this.options.indexAllFiles) return false;
         if (DEFAULT_IGNORED_DIRS.has(baseName)) return true;
         return relativePath.length > 0 && this.gitIgnoreMatcher.ignores(`${relativePath}/`);
     }
@@ -106,11 +109,11 @@ export class IndexingRules {
     shouldSkipFile(filePath: string): boolean {
         const resolvedPath = path.resolve(filePath);
         if (!resolvedPath.startsWith(this.rootPath)) return true;
+        const baseName = path.basename(resolvedPath);
+        if (DEFAULT_IGNORED_FILE_NAMES.has(baseName)) return true;
         if (this.options.indexAllFiles) return false;
 
-        const baseName = path.basename(resolvedPath);
         const extension = path.extname(resolvedPath).toLowerCase();
-        if (DEFAULT_IGNORED_FILE_NAMES.has(baseName)) return true;
         if (DEFAULT_IGNORED_EXTENSIONS.has(extension)) return true;
 
         const relativePath = this.toRelativePath(resolvedPath);

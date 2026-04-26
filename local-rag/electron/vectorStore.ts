@@ -180,6 +180,8 @@ export class VectorStore {
                 )
                 const chunkId = chunkResult.lastInsertRowid
 
+                // Guard against stale/orphan vec rows from prior resets.
+                db.prepare("DELETE FROM chunk_embeddings WHERE chunk_id = CAST(? AS INTEGER)").run(chunkId)
                 insertEmbedding.run(chunkId, serializeVector(embeddings[i]))
                 insertLexical.run(chunk.content, chunkId, filePath)
             }
@@ -233,6 +235,7 @@ export class VectorStore {
                 imageId = Number(insertResult.lastInsertRowid)
             }
 
+            db.prepare("DELETE FROM image_embeddings_clip WHERE image_id = CAST(? AS INTEGER)").run(imageId)
             db.prepare(`
                 INSERT INTO image_embeddings_clip (image_id, embedding)
                 VALUES (CAST(? AS INTEGER), vec_f32(?))

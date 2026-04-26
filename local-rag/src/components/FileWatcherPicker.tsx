@@ -1,4 +1,4 @@
-import { Box, Button, Checkbox, CircularProgress, FormControlLabel, Icon, IconButton, Tooltip, Typography } from "@mui/material";
+import { Box, Button, CircularProgress, Icon, IconButton, Tooltip, Typography } from "@mui/material";
 import { useTheme, alpha } from "@mui/material/styles";
 import { useState } from "react";
 
@@ -7,8 +7,6 @@ function FileWatcherPicker() {
     const [watchedPath, setWatchedPath] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [includeCodeFiles, setIncludeCodeFiles] = useState(false);
-    const [indexAllFiles, setIndexAllFiles] = useState(true);
     const [stats, setStats] = useState<{
         scanned: number;
         indexed: number;
@@ -23,7 +21,7 @@ function FileWatcherPicker() {
         setLoading(true);
         setError(null);
         try {
-            const result = await window.watcher.pickDirectory({ includeCodeFiles, indexAllFiles });
+            const result = await window.watcher.pickDirectory({ includeCodeFiles: false, indexAllFiles: false });
             if (!result.canceled && result.path) {
                 setWatchedPath(result.path);
                 setStats(result.indexingStats);
@@ -91,38 +89,9 @@ function FileWatcherPicker() {
                 {loading ? "Indexing…" : "Choose folder"}
             </Button>
 
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-                <FormControlLabel
-                    control={
-                        <Checkbox
-                            size="small"
-                            checked={includeCodeFiles}
-                            onChange={(e) => setIncludeCodeFiles(e.target.checked)}
-                            sx={{ py: 0.5 }}
-                        />
-                    }
-                    label={
-                        <Typography sx={{ fontSize: '0.78rem', color: theme.palette.text.secondary }}>
-                            Include code files (.ts, .js, .py, etc.)
-                        </Typography>
-                    }
-                />
-                <FormControlLabel
-                    control={
-                        <Checkbox
-                            size="small"
-                            checked={indexAllFiles}
-                            onChange={(e) => setIndexAllFiles(e.target.checked)}
-                            sx={{ py: 0.5 }}
-                        />
-                    }
-                    label={
-                        <Typography sx={{ fontSize: '0.78rem', color: theme.palette.text.secondary }}>
-                            Index all files (no skip filtering)
-                        </Typography>
-                    }
-                />
-            </Box>
+            <Typography sx={{ fontSize: '0.76rem', color: theme.palette.text.secondary, mb: 0.5 }}>
+                Using default safe indexing rules (code files off, skip filtering on).
+            </Typography>
 
             {watchedPath && (
                 <Box

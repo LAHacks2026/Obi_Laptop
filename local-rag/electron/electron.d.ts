@@ -18,6 +18,10 @@ declare global {
                         sectionTitle?: string
                     }>
                 >
+                describeImage: (imagePath: string) => Promise<string>
+                answerImageQuestion: (imagePath: string, question: string) => Promise<string>
+                extractImageText: (imagePath: string) => Promise<string>
+                detectImageObjects: (imagePath: string) => Promise<string[]>
                 stats: () => Promise<{
                     scanned: number
                     indexed: number

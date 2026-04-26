@@ -55,6 +55,14 @@ contextBridge.exposeInMainWorld("api", {
 
         search: (query: string, limit?: number) =>
             ipcRenderer.invoke("rag:search", query, limit),
+        describeImage: (imagePath: string) =>
+            ipcRenderer.invoke("rag:describeImage", imagePath),
+        answerImageQuestion: (imagePath: string, question: string) =>
+            ipcRenderer.invoke("rag:answerImageQuestion", imagePath, question),
+        extractImageText: (imagePath: string) =>
+            ipcRenderer.invoke("rag:extractImageText", imagePath),
+        detectImageObjects: (imagePath: string) =>
+            ipcRenderer.invoke("rag:detectImageObjects", imagePath),
         stats: () =>
             ipcRenderer.invoke("rag:stats"),
     },

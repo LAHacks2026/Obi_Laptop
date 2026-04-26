@@ -42,6 +42,7 @@ const DEFAULT_IGNORED_EXTENSIONS = new Set([
 ]);
 
 const TEXT_FILE_EXTENSIONS = new Set([
+    ".pdf",
     ".txt",
     ".md",
     ".mdx",
@@ -111,10 +112,11 @@ export class IndexingRules {
         if (!resolvedPath.startsWith(this.rootPath)) return true;
         const baseName = path.basename(resolvedPath);
         if (DEFAULT_IGNORED_FILE_NAMES.has(baseName)) return true;
-        if (this.options.indexAllFiles) return false;
-
         const extension = path.extname(resolvedPath).toLowerCase();
         if (DEFAULT_IGNORED_EXTENSIONS.has(extension)) return true;
+        // Keep PDFs indexable even when repos ignore them in .gitignore.
+        if (extension === ".pdf") return false;
+        if (this.options.indexAllFiles) return false;
 
         const relativePath = this.toRelativePath(resolvedPath);
         if (!relativePath) return false;

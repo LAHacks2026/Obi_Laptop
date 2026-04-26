@@ -94,6 +94,7 @@ export class VectorStore {
 
     private async indexTextFile(filePath: string, modality: IndexedModality = "text") {
         const db = getDb()
+        const extension = path.extname(filePath).toLowerCase()
 
         const stat = fs.statSync(filePath)
         const updatedAtMs = Math.trunc(stat.mtimeMs)
@@ -107,13 +108,14 @@ export class VectorStore {
             return { skipped: true as const, reason: "unchanged" as const }
         }
 
-        const rawText = safeReadTextFile(filePath)
-        if (!rawText.trim()) {
+        const rawText = await safeReadTextFile(filePath)
+        const textToIndex = extension === ".pdf" ? buildPdfIndexText(filePath, rawText) : rawText
+        if (!textToIndex.trim()) {
             this.stats.skipped += 1
             return { skipped: true as const, reason: "empty" as const }
         }
 
-        const chunks = chunkTextWithMetadata(filePath, rawText, 800, 120)
+        const chunks = chunkTextWithMetadata(filePath, textToIndex, 800, 120)
         if (chunks.length === 0) {
             this.stats.skipped += 1
             return { skipped: true as const, reason: "no_chunks" as const }
@@ -613,8 +615,47 @@ function walkDirectory(rootPath: string, rules: IndexingRules): string[] {
     return results
 }
 
-function safeReadTextFile(filePath: string) {
+async function safeReadTextFile(filePath: string) {
+    const extension = path.extname(filePath).toLowerCase()
+    if (extension === ".pdf") {
+        try {
+            const pdfParseModule = await import("pdf-parse")
+            const PDFParse = (pdfParseModule as { PDFParse?: new (options: { data: Buffer }) => { getText: () => Promise<{ text?: string }>; destroy?: () => Promise<void> } }).PDFParse
+            if (!PDFParse) {
+                throw new Error("PDFParse class not found in pdf-parse module")
+            }
+            const data = fs.readFileSync(filePath)
+            const parser = new PDFParse({ data })
+            try {
+                const parsed = await parser.getText()
+                return parsed?.text ?? ""
+            } finally {
+                await parser.destroy?.().catch(() => { })
+            }
+        } catch (error) {
+            console.warn("[vectorStore] failed to extract PDF text; skipping:", filePath, error)
+            return ""
+        }
+    }
     return fs.readFileSync(filePath, "utf8")
+}
+
+function buildPdfIndexText(filePath: string, extractedText: string): string {
+    const fileName = path.basename(filePath)
+    const stem = fileName.replace(/\.pdf$/i, "")
+    const stemTerms = stem
+        .replace(/[_-]+/g, " ")
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .replace(/\s+/g, " ")
+        .trim()
+
+    const metadataLine = `PDF file ${fileName}${stemTerms ? ` title ${stemTerms}` : ""}`
+    const body = extractedText.trim()
+
+    // Keep lightweight metadata so scanned/image-only PDFs remain searchable by name/type.
+    if (!body) return metadataLine
+    if (body.toLowerCase().includes("pdf")) return `${metadataLine}\n\n${body}`
+    return `${metadataLine}\n\npdf\n\n${body}`
 }
 
 function chunkText(text: string, chunkSize = 800, overlap = 120): ChunkWithMeta[] {
@@ -650,7 +691,7 @@ function serializeVector(vector: number[]): Buffer {
 
 function inferModality(filePath: string): IndexedModality | null {
     const extension = path.extname(filePath).toLowerCase()
-    if ([".txt", ".md", ".mdx", ".json", ".csv", ".yaml", ".yml", ".toml", ".xml", ".log", ".ini", ".sql"].includes(extension)) return "text"
+    if ([".pdf", ".txt", ".md", ".mdx", ".json", ".csv", ".yaml", ".yml", ".toml", ".xml", ".log", ".ini", ".sql"].includes(extension)) return "text"
     if ([".ts", ".tsx", ".js", ".jsx", ".py", ".java", ".go", ".rs", ".c", ".cpp", ".h", ".hpp", ".cs", ".rb"].includes(extension)) return "code"
     if ([".png", ".jpg", ".jpeg", ".webp", ".gif"].includes(extension)) return "image"
     return null

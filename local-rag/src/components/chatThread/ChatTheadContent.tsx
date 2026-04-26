@@ -4,7 +4,6 @@ import {
     Box,
     Button,
     Card,
-    Chip,
     Icon,
     Stack,
     TextField,
@@ -25,7 +24,6 @@ type ChatThreadContentProps = {
     send: () => void;
     stop: () => void;
     isGenerating: boolean;
-    chatModelReady: boolean;
     starting: boolean;
 };
 
@@ -38,7 +36,6 @@ function ChatThreadContent({
     send,
     stop,
     isGenerating,
-    chatModelReady,
     starting,
 }: ChatThreadContentProps) {
     const theme = useTheme();
@@ -131,7 +128,7 @@ function ChatThreadContent({
                             }}
                         >
                             Hi Obi.{" "}
-                            <Box component="span" sx={{ color: "rgba(209, 188, 255, 0.8)" }}>
+                            <Box component="span" sx={{ color: theme.palette.primary.main }}>
                                 What's in my vault?
                             </Box>
                         </Typography>
@@ -227,7 +224,7 @@ function ChatThreadContent({
                             overflow: "hidden",
                             backgroundColor: theme.palette.background.default,
                             border: "0.75px solid",
-                            borderColor: theme.palette.primary.contrastText,
+                            borderColor: theme.palette.outline.variant,
                             borderRadius: 3,
                         }}
                     >
@@ -314,66 +311,6 @@ function ChatThreadContent({
                             </Button>
                         </Box>
 
-                        {/* Retrieved Documents */}
-                        {lastRetrieved.length > 0 && (
-                            <Box
-                                sx={{
-                                    px: 2,
-                                    pt: 1.5,
-                                    display: "flex",
-                                    flexWrap: "wrap",
-                                    gap: 0.75,
-                                }}
-                            >
-                                {lastRetrieved.map((r) => (
-                                    <Chip
-                                        key={r.chunkId}
-                                        size="small"
-                                        variant="outlined"
-                                        label={`${r.fileName} · ${r.distance.toFixed(2)}`}
-                                        role="button"
-                                        tabIndex={0}
-                                        onClick={async () => {
-                                            const res = await window.api.openIndexedPath(
-                                                r.documentPath
-                                            );
-                                            if (!res.ok) {
-                                                console.warn(
-                                                    "[openIndexedPath]",
-                                                    r.documentPath,
-                                                    res.error
-                                                );
-                                            }
-                                        }}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Enter" || e.key === " ") {
-                                                e.preventDefault();
-                                                (e.currentTarget as HTMLElement).click();
-                                            }
-                                        }}
-                                        sx={{
-                                            maxWidth: 220,
-                                            height: 24,
-                                            cursor: "pointer",
-                                            backgroundColor: "transparent",
-                                            borderColor: theme.palette.outline.variant,
-                                            "& .MuiChip-label": {
-                                                px: 1,
-                                                fontSize: 11,
-                                                color: theme.palette.text.secondary,
-                                                whiteSpace: "nowrap",
-                                                overflow: "hidden",
-                                                textOverflow: "ellipsis",
-                                            },
-                                            "&:hover": {
-                                                borderColor: theme.palette.primary.main,
-                                            },
-                                        }}
-                                    />
-                                ))}
-                            </Box>
-                        )}
-
                         {/* Text Field & Send/Stop Button */}
                         <Box
                             sx={{
@@ -391,7 +328,7 @@ function ChatThreadContent({
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 placeholder="Describe your query..."
-                                disabled={!chatModelReady || starting}
+                                disabled={starting}
                                 variant="outlined"
                                 onKeyDown={(e) => {
                                     if (e.key === "Enter" && !e.shiftKey && !(e as any).isComposing) {
@@ -425,7 +362,7 @@ function ChatThreadContent({
                                 <Button
                                     variant="contained"
                                     onClick={stop}
-                                    disabled={!chatModelReady || starting}
+                                    disabled={starting}
                                     sx={{
                                         minWidth: 44,
                                         width: 44,
@@ -440,9 +377,7 @@ function ChatThreadContent({
                                 <Button
                                     variant="contained"
                                     onClick={send}
-                                    disabled={
-                                        !chatModelReady || starting || isGenerating || !input.trim()
-                                    }
+                                    disabled={starting || isGenerating || !input.trim()}
                                     sx={{
                                         minWidth: 44,
                                         width: 44,

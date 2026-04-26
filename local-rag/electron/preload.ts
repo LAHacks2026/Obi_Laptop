@@ -26,6 +26,18 @@ contextBridge.exposeInMainWorld("llama", {
         return () => ipcRenderer.removeListener("llama:chat_stream_delta", handler);
     },
 
+    onChatStreamDone: (cb: (payload: StreamDonePayload) => void) => {
+        const handler = (_: unknown, payload: StreamDonePayload) => cb(payload);
+        ipcRenderer.on("llama:chat_stream_done", handler);
+        return () => ipcRenderer.removeListener("llama:chat_stream_done", handler);
+    },
+
+    onChatStreamError: (cb: (payload: StreamErrorPayload) => void) => {
+        const handler = (_: unknown, payload: StreamErrorPayload) => cb(payload);
+        ipcRenderer.on("llama:chat_stream_error", handler);
+        return () => ipcRenderer.removeListener("llama:chat_stream_error", handler);
+    },
+
     onToolCallDelta: (cb: (payload: StreamDeltaPayload) => void) => {
         const handler = (_: unknown, payload: StreamDeltaPayload) => cb(payload);
         ipcRenderer.on("llama:tool_call_delta", handler);

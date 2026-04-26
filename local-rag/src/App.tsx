@@ -1,13 +1,30 @@
 import { useEffect, useRef, useState } from "react";
-import FileWatcherPicker from "./components/FileWatcherPicker";
+import { Box } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import type { SearchResult, Msg, LlamaStatus } from "./types/global";
 import AppShell from "./components/layout/AppShell";
-import SidebarNav from "./components/layout/SidebarNav";
+import SidebarNav, { type NavKey } from "./components/layout/SidebarNav";
 import MainCanvas from "./components/layout/MainCanvas";
+import EmptyState from "./components/ui/EmptyState";
 import ChatThreadTopBar from "./components/chatThread/ChatThreadTopBar";
-import ChatThreadContent from "./components/chatThread/ChatTheadContent";
 
-type NavKey = 'chat' | 'files' | 'vault' | 'history' | 'storage' | 'help';
+// Screens
+import HomeScreen from "./components/screens/HomeScreen";
+import ChatScreen from "./components/screens/ChatScreen";
+import FilesScreen from "./components/screens/FilesScreen";
+import VaultAppsScreen from "./components/screens/VaultAppsScreen";
+import SettingsScreen from "./components/screens/SettingsScreen";
+import PrivacyAboutScreen from "./components/screens/PrivacyAboutScreen";
+
+const NAV_LABELS: Record<NavKey, string> = {
+    home: 'Home',
+    chat: 'Chat',
+    files: 'Files',
+    vault: 'Vault / Apps',
+    history: 'History',
+    settings: 'Settings',
+    about: 'Privacy',
+};
 
 type AppProps = {
     selectedTheme: 'light' | 'dark';
@@ -15,24 +32,20 @@ type AppProps = {
 };
 
 function App({ selectedTheme, onToggleTheme }: AppProps) {
-    /******************************************** 
+    /********************************************
     * Layout States
     ********************************************/
-    const [sideNavActiveItem, setSideNavActiveItem] = useState<NavKey>(`chat`);
+    const [sideNavActiveItem, setSideNavActiveItem] = useState<NavKey>('home');
 
-    /******************************************** 
-    * States  
-    --------------------------------------
+    /********************************************
+    * States
     - Chat Model
     - Embedding Model
     - File Watcher
-    - Database (Maybe)
     ********************************************/
-    // Overall App State
     const [starting, setStarting] = useState(true);
 
     // Chat Model
-    const [chatModelReady, setChatModelReady] = useState(false);
     const [chatModelStatus, setChatModelStatus] = useState<LlamaStatus | null>(null);
 
     // Messages
@@ -43,7 +56,6 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
 
     // Chat Stream
     const [lastRetrieved, setLastRetrieved] = useState<SearchResult[]>([]);
-
     const [isGenerating, setIsGenerating] = useState(false);
     const [lastError, setLastError] = useState<string | null>(null);
 
@@ -65,11 +77,9 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
                 const st: LlamaStatus = await window.llama.status();
                 if (!mounted) return;
                 setChatModelStatus(st);
-                setChatModelReady(st.status === "running" || st.status === "starting"); // allow UI; chat guarded below
             } catch (e: any) {
                 if (!mounted) return;
                 setLastError(String(e?.message ?? e));
-                setChatModelReady(false);
                 setChatModelStatus({ status: "error", port: 0, baseUrl: "", modelType: "" });
             } finally {
                 if (mounted) setStarting(false);
@@ -110,74 +120,29 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
         const userMsg: Msg = { role: "user", content };
         const history = messagesRef.current;
 
-        // Optimistic UI update: add user message + empty assistant message (we'll fill it with deltas)
         setMessages((prev) => [...prev, userMsg, { role: "assistant", content: "" }]);
 
-        // Unique requestId for routing events
         const requestId =
             (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
 
         setIsGenerating(true);
 
-        // NEW: retrieve relevant chunks before calling the model
         let ragResults: SearchResult[] = [];
-        let ragSystemMsg: Msg | null = null;
+        let augmentedContent = content;
 
         try {
             ragResults = await window.api.rag.search(content, 5);
             setLastRetrieved(ragResults);
-            ragSystemMsg = buildRagSystemMessage(ragResults);
-        } catch (e: any) {
-            // retrieval failure should not necessarily block chat
+            const ragPrefix = buildRagContextPrefix(ragResults);
+            if (ragPrefix) augmentedContent = ragPrefix + content;
+        } catch (e) {
             console.error("RAG search failed:", e);
-            setLastError(`RAG search failed: ${String(e?.message ?? e)}`);
+            setLastError(`RAG search failed: ${String((e as Error)?.message ?? e)}`);
         }
 
-        const nextMessages = ragSystemMsg
-            ? [...history, ragSystemMsg, userMsg]
-            : [...history, userMsg];
-        //[...history, userMsg];
+        const augmentedUserMsg: Msg = { role: "user", content: augmentedContent };
+        const nextMessages = [...history, augmentedUserMsg];
 
-
-        // Subscribe to tool call events
-        // const offTool = window.llama.onToolCallDelta?.((payload: any) => {
-        //     if (payload?.requestId !== requestId) return;
-        //     const incoming = payload?.toolCalls;
-        //     if (!incoming) return;
-
-        //     setMessages((prev) => {
-        //         const i = prev.length - 1;
-        //         const last = prev[i];
-        //         if (!last || last.role !== "assistant") return prev;
-
-        //         const existing = last.toolCalls ?? [];
-        //         const merged = [...existing];
-
-        //         for (const tc of incoming) {
-        //             const idx = tc.index ?? 0;
-        //             const prevTc = merged[idx] ?? { index: idx, function: { name: "", arguments: "" } };
-
-        //             merged[idx] = {
-        //                 ...prevTc,
-        //                 ...tc,
-        //                 function: {
-        //                     name: (prevTc.function?.name ?? "") + (tc.function?.name ?? ""),
-        //                     arguments:
-        //                         (prevTc.function?.arguments ?? "") + (tc.function?.arguments ?? ""),
-        //                 },
-        //             };
-        //         }
-
-        //         const next = prev.slice();
-        //         next[i] = {
-        //             ...last,
-        //             toolCalls: merged,
-        //         };
-        //         return next;
-        //     });
-        // });
-
-        // Subscribe to streaming events
         const offDelta = window.llama.onChatStreamDelta?.((payload: any) => {
             if (payload?.requestId !== requestId) return;
             const delta = String(payload?.delta ?? "");
@@ -196,7 +161,6 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
 
         const cleanup = () => {
             try { offDelta?.(); } catch { }
-            // try { offTool?.(); } catch { }
             try { offDone?.(); } catch { }
             try { offErr?.(); } catch { }
         };
@@ -211,7 +175,6 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
             if (payload?.requestId !== requestId) return;
             setIsGenerating(false);
             setLastError(String(payload?.error ?? "Unknown error"));
-            // Replace the empty assistant bubble with the error (or append)
             setMessages((prev) => {
                 const copy = [...prev];
                 const last = copy[copy.length - 1];
@@ -224,7 +187,6 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
             cleanup();
         });
 
-        // Start the stream
         try {
             if (!window.llama.chatStreamStart) {
                 throw new Error("Streaming API not available on window.llama");
@@ -240,73 +202,126 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
         }
     };
 
-    // const latestAssistantToolCalls =
-    //     [...messages]
-    //         .reverse()
-    //         .find((m) => m.role === "assistant" && m.toolCalls?.length)?.toolCalls ?? [];
-
-    const buildRagSystemMessage = (results: SearchResult[]): Msg | null => {
-        if (!results.length) return null;
+    const buildRagContextPrefix = (results: SearchResult[]): string => {
+        if (!results.length) return "";
 
         const context = results
-            .map((r, i) => {
-                return [
-                    `Source ${i + 1}:`,
-                    `File: ${r.fileName}`,
+            .map((r, i) =>
+                [
+                    `Source ${i + 1}: ${r.fileName}`,
                     `Path: ${r.documentPath}`,
-                    `Distance: ${r.distance}`,
-                    `Content:`,
-                    r.content,
-                ].join("\n");
-            })
+                    `Content: ${r.content}`,
+                ].join("\n")
+            )
             .join("\n\n---\n\n");
 
-        return {
-            role: "system",
-            content:
-                "Use the retrieved context below to answer the user's question. " +
-                "Prefer the retrieved context when it is relevant. " +
-                "If the context is insufficient, say so plainly.\n\n" +
-                context,
-        };
+        return (
+            "Use the retrieved context below to answer the question. " +
+            "Prefer this context when relevant; say so plainly if it is insufficient.\n\n" +
+            context +
+            "\n\n---\n\nQuestion: "
+        );
+    };
+
+    // Navigate to chat and optionally pre-fill the input
+    const navigateToChat = (query?: string) => {
+        setSideNavActiveItem('chat');
+        if (query) setInput(query);
     };
 
     const renderCanvasContent = () => {
         switch (sideNavActiveItem) {
-            case "chat":
+            case 'home':
+                return <HomeScreen onNavigateToChat={navigateToChat} />;
+
+            case 'vault':
+                return <VaultAppsScreen />;
+
+            case 'history':
                 return (
-                    <ChatThreadContent
-                        messages={messages}
-                        lastError={lastError}
-                        lastRetrieved={lastRetrieved}
-                        input={input}
-                        setInput={setInput}
-                        send={send}
-                        stop={stop}
-                        isGenerating={isGenerating}
-                        chatModelReady={chatModelReady}
-                        starting={starting}
+                    <EmptyState
+                        icon="history"
+                        title="No history yet"
+                        description="Your conversation history will appear here in a future update."
                     />
                 );
 
-            case "files":
-                return <FileWatcherPicker />;
+            case 'settings':
+                return (
+                    <SettingsScreen
+                        selectedTheme={selectedTheme}
+                        onToggleTheme={onToggleTheme}
+                    />
+                );
 
-            case "vault":
-                return <div>Vault view</div>;
-
-            case "history":
-                return <div>History view</div>;
-
-            case "storage":
-                return <div>Storage view</div>;
-
-            case "help":
-                return <div>Help view</div>;
+            case 'about':
+                return <PrivacyAboutScreen />;
 
             default:
                 return null;
         }
+    };
+
+    const renderScreen = () => {
+        if (sideNavActiveItem === 'chat') {
+            return (
+                <ChatScreen
+                    starting={starting}
+                    messages={messages}
+                    input={input}
+                    setInput={setInput}
+                    send={send}
+                    stop={stop}
+                    isGenerating={isGenerating}
+                    lastError={lastError}
+                    lastRetrieved={lastRetrieved}
+                    onNavigateToChat={navigateToChat}
+                />
+            );
+        }
+
+        if (sideNavActiveItem === 'files') {
+            return <FilesScreen onNavigateToChat={navigateToChat} />;
+        }
+
+        return (
+            <MainCanvas
+                contentMaxWidth="100%"
+                canvasContent={renderCanvasContent()}
+            />
+        );
+    };
+
+    const renderMainContent = () => {
+        const isHome = sideNavActiveItem === 'home';
+        return (
+            <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                {/* Global top bar — hidden on home screen */}
+                {!isHome && (
+                    <Box
+                        sx={(theme) => ({
+                            height: 56,
+                            flexShrink: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            px: 4,
+                            borderBottom: `1px solid ${theme.palette.outline.variant}`,
+                            backdropFilter: 'blur(12px)',
+                        })}
+                    >
+                        <ChatThreadTopBar
+                            starting={starting}
+                            chatModelStatus={chatModelStatus}
+                            homeLabel="Home"
+                            sessionLabel={NAV_LABELS[sideNavActiveItem]}
+                            statusLabel={chatModelStatus?.status ?? 'unknown'}
+                            onHomeClick={() => setSideNavActiveItem('home')}
+                        />
+                    </Box>
+                )}
+                {renderScreen()}
+            </Box>
+        );
     };
 
     return (
@@ -318,61 +333,9 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
                     onNewChat={() => setSideNavActiveItem('chat')}
                     selectedTheme={selectedTheme}
                     onThemeChange={onToggleTheme}
-                />}
-            mainCanvas={
-                <MainCanvas
-                    topBar={
-                        <ChatThreadTopBar
-                            starting={starting}
-                            chatModelStatus={chatModelStatus}
-                            sessionLabel={sideNavActiveItem}
-                            homeLabel="Home"
-                            statusLabel={chatModelStatus?.status ?? "unknown"}
-                        />
-                    }
-
-                    canvasContent={renderCanvasContent()}
-
-                    bottomDock={
-                        <div style={{ padding: 12, borderTop: "1px solid #333", fontSize: 12 }}>
-                            {/* <div style={{ fontWeight: 600, marginBottom: 8 }}>Tool Call Debug</div>
-
-                        {!latestAssistantToolCalls.length ? (
-                            <div>No tool calls yet.</div>
-                        ) : (
-                            latestAssistantToolCalls.map((tc, idx) => (
-                                <div
-                                    key={tc.id ?? idx}
-                                    style={{
-                                        marginBottom: 10,
-                                        padding: 10,
-                                        border: "1px solid #444",
-                                        borderRadius: 8,
-                                    }}
-                                >
-                                    <div><strong>Index:</strong> {tc.index}</div>
-                                    <div><strong>ID:</strong> {tc.id ?? "(none yet)"}</div>
-                                    <div><strong>Type:</strong> {tc.type ?? "(none yet)"}</div>
-                                    <div><strong>Name:</strong> {tc.function?.name ?? "(streaming...)"}</div>
-                                    <div style={{ marginTop: 6 }}>
-                                        <strong>Arguments:</strong>
-                                        <pre
-                                            style={{
-                                                whiteSpace: "pre-wrap",
-                                                wordBreak: "break-word",
-                                                marginTop: 4,
-                                            }}
-                                        >
-                                            {tc.function?.arguments ?? ""}
-                                        </pre>
-                                    </div>
-                                </div>
-                            ))
-                        )} */}
-                        </div>
-                    }
                 />
             }
+            mainCanvas={renderMainContent()}
         />
     );
 }

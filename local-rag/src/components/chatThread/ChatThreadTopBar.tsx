@@ -8,6 +8,7 @@ type ChatThreadTopBarProps = {
     sessionLabel?: string;
     homeLabel?: string;
     statusLabel: string;
+    onHomeClick?: () => void;
 };
 
 export default function ChatThreadTopBar({
@@ -16,6 +17,7 @@ export default function ChatThreadTopBar({
     sessionLabel,
     homeLabel,
     statusLabel,
+    onHomeClick,
 }: ChatThreadTopBarProps) {
     const theme = useTheme();
 
@@ -45,12 +47,15 @@ export default function ChatThreadTopBar({
             {/* Path */}
             <Stack direction="row" spacing={1} alignItems="center">
                 <Typography
+                    onClick={onHomeClick}
                     sx={{
                         fontSize: 10,
                         textTransform: "uppercase",
                         letterSpacing: "0.18em",
                         color: theme.palette.text.secondary,
                         fontWeight: 600,
+                        cursor: onHomeClick ? "pointer" : "default",
+                        "&:hover": onHomeClick ? { color: theme.palette.text.primary } : {},
                     }}
                 >
                     {homeLabel}

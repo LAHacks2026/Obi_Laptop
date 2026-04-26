@@ -10,17 +10,17 @@ const lightTheme = createTheme({
         mode: 'light',
 
         primary: {
-            main: '#6D46C0',
-            light: '#A882FF',
-            dark: '#4D219F',
-            contrastText: '#EADEFF',
+            main: '#14213D',        // Prussian Blue
+            light: '#1D3461',
+            dark: '#0A1526',
+            contrastText: '#FFFFFF',
         },
 
         secondary: {
-            main: '#446061',
-            light: '#A7C5C5',
-            dark: '#294545',
-            contrastText: '#EADEFF',
+            main: '#FCA311',        // Orange accent
+            light: '#FDB944',
+            dark: '#D98800',
+            contrastText: '#000000',
         },
 
         error: {
@@ -45,44 +45,44 @@ const lightTheme = createTheme({
         },
 
         background: {
-            default: '#FCF9F8',
+            default: '#FFFFFF',
             paper: '#FFFFFF',
         },
 
         text: {
-            primary: '#1F2020',
-            secondary: '#565555',
-            disabled: '#767575',
+            primary: '#000000',
+            secondary: '#555555',
+            disabled: '#888888',
         },
 
-        divider: '#D9D4D3',
+        divider: '#E5E5E5',
 
         action: {
-            active: '#6D46C0',
-            hover: 'rgba(109, 70, 192, 0.06)',
-            selected: 'rgba(109, 70, 192, 0.12)',
-            disabled: 'rgba(86, 85, 85, 0.35)',
+            active: '#14213D',
+            hover: 'rgba(20, 33, 61, 0.06)',
+            selected: 'rgba(20, 33, 61, 0.12)',
+            disabled: 'rgba(85, 85, 85, 0.35)',
             disabledBackground: 'rgba(118, 117, 117, 0.12)',
-            focus: 'rgba(109, 70, 192, 0.18)',
+            focus: 'rgba(20, 33, 61, 0.18)',
         },
 
         surface: {
-            base: '#FCF9F8',
+            base: '#FFFFFF',
             low: '#FFFFFF',
-            mid: '#F7F3F2',
-            high: '#F1ECEB',
-            highest: '#EBE6E5',
+            mid: '#F2F2F2',
+            high: '#E5E5E5',        // Alabaster Grey
+            highest: '#D8D8D8',
             lowest: '#FFFFFF',
             bright: '#FFFFFF',
-            tint: '#D1BCFF',
-            inverse: '#0E0E0E',
+            tint: '#FCA311',
+            inverse: '#000000',
         },
 
-        textTertiary: '#767575',
+        textTertiary: '#888888',
 
         outline: {
-            main: '#B4AEAD',
-            variant: '#D9D4D3',
+            main: '#AAAAAA',
+            variant: '#E0E0E0',
         },
 
         status: {
@@ -180,10 +180,10 @@ const lightTheme = createTheme({
                     minHeight: 36,
                 },
                 containedPrimary: ({ theme }) => ({
-                    backgroundColor: '#6D46C0',
+                    backgroundColor: '#14213D',
                     color: '#FFFFFF',
                     '&:hover': {
-                        backgroundColor: '#4D219F',
+                        backgroundColor: '#1D3461',
                     },
                     '&:focus-visible': {
                         outline: `2px solid ${theme.palette.primary.main}`,
@@ -191,10 +191,10 @@ const lightTheme = createTheme({
                     },
                 }),
                 containedSecondary: {
-                    backgroundColor: '#E8F1F1',
-                    color: '#294545',
+                    backgroundColor: '#FCA311',
+                    color: '#000000',
                     '&:hover': {
-                        backgroundColor: '#DCE9E9',
+                        backgroundColor: '#FDB944',
                     },
                 },
                 outlined: ({ theme }) => ({
@@ -203,13 +203,13 @@ const lightTheme = createTheme({
                     '&:hover': {
                         borderColor: theme.palette.primary.main,
                         color: theme.palette.primary.main,
-                        backgroundColor: 'rgba(109, 70, 192, 0.04)',
+                        backgroundColor: 'rgba(20, 33, 61, 0.04)',
                     },
                 }),
                 text: ({ theme }) => ({
                     color: theme.palette.primary.main,
                     '&:hover': {
-                        backgroundColor: 'rgba(109, 70, 192, 0.06)',
+                        backgroundColor: 'rgba(20, 33, 61, 0.06)',
                     },
                 }),
             },
@@ -222,7 +222,7 @@ const lightTheme = createTheme({
                     borderRadius: 4,
                     '&:hover': {
                         color: theme.palette.primary.main,
-                        backgroundColor: 'rgba(109, 70, 192, 0.06)',
+                        backgroundColor: 'rgba(20, 33, 61, 0.06)',
                     },
                 }),
             },
@@ -345,7 +345,7 @@ const lightTheme = createTheme({
             styleOverrides: {
                 tooltip: ({ theme }) => ({
                     backgroundColor: theme.palette.surface.inverse,
-                    color: '#FCF9F8',
+                    color: '#FFFFFF',
                     border: `1px solid ${theme.palette.outline.main}`,
                 }),
                 arrow: ({ theme }) => ({

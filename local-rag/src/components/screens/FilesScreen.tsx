@@ -32,6 +32,7 @@ type FilesScreenProps = {
 };
 
 type FilterType = 'all' | 'pdf' | 'docs' | 'code' | 'images' | 'sheets' | 'text';
+type StatsFilter = "all" | "text" | "code" | "image";
 
 const FILE_FILTERS: { key: FilterType; label: string; icon: string; exts: string[] }[] = [
     { key: 'all', label: 'All', icon: 'folder_open', exts: [] },
@@ -59,6 +60,7 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
     const [showWatcher, setShowWatcher] = useState(false);
     const [activeFilter, setActiveFilter] = useState<FilterType>('all');
     const [recentIndexedFiles, setRecentIndexedFiles] = useState<IndexedFileMeta[]>([]);
+    const [activeStatsFilter, setActiveStatsFilter] = useState<StatsFilter>("all");
 
     const loadStats = useCallback(async () => {
         try {
@@ -127,6 +129,11 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
         return results.filter((r) => filter.exts.includes(getExt(r.fileName)));
     }, [results, activeFilter]);
 
+    const filteredRecentIndexedFiles = useMemo(() => {
+        if (activeStatsFilter === "all") return recentIndexedFiles;
+        return recentIndexedFiles.filter((file) => file.modality === activeStatsFilter);
+    }, [recentIndexedFiles, activeStatsFilter]);
+
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
             {/* Header */}
@@ -178,13 +185,38 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
                             }}
                         >
                             {[
-                                { label: 'Indexed', value: stats!.indexed, icon: 'check_circle', color: '#4CAF50' },
-                                { label: 'Text', value: stats!.textIndexed, icon: 'article', color: theme.palette.primary.main },
-                                { label: 'Code', value: stats!.codeIndexed, icon: 'code', color: '#3178C6' },
-                                { label: 'Images', value: stats!.imageIndexed, icon: 'image', color: '#9C27B0' },
-                                { label: 'Skipped (latest scan)', value: stats!.skipped, icon: 'skip_next', color: theme.palette.text.secondary as string },
-                            ].map(({ label, value, icon, color }) => (
-                                <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                                { label: 'Indexed', value: stats!.indexed, icon: 'check_circle', color: '#4CAF50', filter: 'all' as const, clickable: true },
+                                { label: 'Text', value: stats!.textIndexed, icon: 'article', color: theme.palette.primary.main, filter: 'text' as const, clickable: true },
+                                { label: 'Code', value: stats!.codeIndexed, icon: 'code', color: '#3178C6', filter: 'code' as const, clickable: true },
+                                { label: 'Images', value: stats!.imageIndexed, icon: 'image', color: '#9C27B0', filter: 'image' as const, clickable: true },
+                                { label: 'Skipped (latest scan)', value: stats!.skipped, icon: 'skip_next', color: theme.palette.text.secondary as string, filter: null, clickable: false },
+                            ].map(({ label, value, icon, color, filter, clickable }) => (
+                                <Box
+                                    key={label}
+                                    onClick={() => {
+                                        if (!clickable || !filter) return;
+                                        setActiveStatsFilter((prev) => (prev === filter ? "all" : filter));
+                                    }}
+                                    sx={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 0.75,
+                                        cursor: clickable ? 'pointer' : 'default',
+                                        px: clickable ? 0.75 : 0,
+                                        py: clickable ? 0.35 : 0,
+                                        borderRadius: 1,
+                                        border: clickable && activeStatsFilter === filter
+                                            ? `1px solid ${theme.palette.primary.main}`
+                                            : '1px solid transparent',
+                                        backgroundColor: clickable && activeStatsFilter === filter
+                                            ? alpha(theme.palette.primary.main, 0.12)
+                                            : 'transparent',
+                                        transition: 'all 120ms ease',
+                                        '&:hover': clickable ? {
+                                            backgroundColor: alpha(theme.palette.primary.main, 0.08),
+                                        } : undefined,
+                                    }}
+                                >
                                     <Icon sx={{ fontSize: 15, color }}>{icon}</Icon>
                                     <Typography sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{value.toLocaleString()}</Typography>
                                     <Typography sx={{ fontSize: '0.72rem', color: theme.palette.text.secondary }}>{label}</Typography>
@@ -214,8 +246,13 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
                                 >
                                     Recently Indexed Files
                                 </Typography>
+                                {activeStatsFilter !== "all" && (
+                                    <Typography sx={{ fontSize: '0.68rem', color: theme.palette.text.secondary, mb: 1 }}>
+                                        Showing {activeStatsFilter} files
+                                    </Typography>
+                                )}
                                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, maxHeight: 240, overflowY: 'auto', pr: 0.5 }}>
-                                    {recentIndexedFiles.map((file) => {
+                                    {filteredRecentIndexedFiles.map((file) => {
                                         const indexedAt = file.indexedAtMs ? new Date(file.indexedAtMs).toLocaleString() : "Unknown";
                                         const updatedAt = file.updatedAtMs ? new Date(file.updatedAtMs).toLocaleString() : "Unknown";
                                         const indexedAgain = file.indexCount > 1;
@@ -280,6 +317,11 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
                                             </Box>
                                         );
                                     })}
+                                    {filteredRecentIndexedFiles.length === 0 && (
+                                        <Typography sx={{ fontSize: '0.72rem', color: theme.palette.text.secondary, py: 1 }}>
+                                            No files in this category yet.
+                                        </Typography>
+                                    )}
                                 </Box>
                             </Box>
                         )}

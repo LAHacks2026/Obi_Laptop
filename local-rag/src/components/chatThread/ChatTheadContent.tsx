@@ -42,6 +42,7 @@ function ChatThreadContent({
     const visibleMessages = useMemo(() => messages.filter((m) => m.role !== "system"), [messages]);
     const hasConversation = visibleMessages.length > 0;
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
+    const showTokenFooter = isGenerating || input.trim().length > 0;
 
     useEffect(() => {
         if (!hasConversation) return;
@@ -323,8 +324,8 @@ function ChatThreadContent({
                             <TextField
                                 fullWidth
                                 multiline
-                                minRows={2}
-                                maxRows={8}
+                                minRows={1}
+                                maxRows={6}
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 placeholder="Describe your query..."
@@ -352,7 +353,7 @@ function ChatThreadContent({
                                         },
                                     },
                                     "& textarea": {
-                                        py: 0.5,
+                                        py: 0.25,
                                     },
                                 }}
                             />
@@ -418,16 +419,18 @@ function ChatThreadContent({
                                 </Typography>
                             </Stack>
 
-                            <Typography
-                                variant="caption"
-                                sx={{
-                                    color: theme.palette.text.disabled,
-                                    textTransform: "uppercase",
-                                    letterSpacing: "0.08em",
-                                }}
-                            >
-                                {isGenerating ? "Generating…" : "Tokens: 0/32k"}
-                            </Typography>
+                            {showTokenFooter ? (
+                                <Typography
+                                    variant="caption"
+                                    sx={{
+                                        color: theme.palette.text.disabled,
+                                        textTransform: "uppercase",
+                                        letterSpacing: "0.08em",
+                                    }}
+                                >
+                                    {isGenerating ? "Generating…" : "Tokens: 0/32k"}
+                                </Typography>
+                            ) : null}
                         </Box>
                     </Card>
                 </Box>

@@ -4,7 +4,7 @@ import ThemeToggleButton from '../ui/ThemeToggleButton';
 export type NavKey = 'home' | 'chat' | 'files' | 'vault' | 'history' | 'settings' | 'about';
 
 type NavItemProps = {
-    icon: React.ReactNode;
+    icon: string;
     label: string;
     active?: boolean;
     onClick: () => void;
@@ -17,38 +17,52 @@ function NavItem({ icon, label, active = false, onClick }: NavItemProps) {
             sx={(theme) => ({
                 display: 'flex',
                 alignItems: 'center',
-                gap: 1.5,
-                px: 2,
-                py: 1.25,
-                mx: 1,
+                gap: 1.25,
+                px: 1.5,
+                py: 1.05,
+                mx: 1.25,
+                my: 0.25,
                 borderRadius: 1,
                 cursor: 'pointer',
                 userSelect: 'none',
-                transition: 'all 180ms ease',
+                transition: 'all 140ms ease',
                 color: active ? theme.palette.primary.main : theme.palette.text.secondary,
-                backgroundColor: active ? theme.palette.surface.high : 'transparent',
-                borderLeft: active
-                    ? `2px solid ${theme.palette.primary.main}`
-                    : '2px solid transparent',
+                backgroundColor: active ? theme.palette.action.selected : 'transparent',
+                border: active
+                    ? `1px solid ${theme.palette.primary.main}`
+                    : `1px solid transparent`,
+                boxShadow: active
+                    ? `inset 3px 0 0 ${theme.palette.primary.main}`
+                    : 'none',
                 '&:hover': {
                     backgroundColor: active
-                        ? theme.palette.surface.highest
-                        : theme.palette.surface.mid,
+                        ? theme.palette.action.selected
+                        : theme.palette.action.hover,
                     color: active
                         ? theme.palette.primary.main
                         : theme.palette.text.primary,
+                    transform: 'translateX(1px)',
                 },
             })}
         >
-            <Box sx={{ color: 'inherit', display: 'flex' }}>
+            <Icon
+                sx={{
+                    color: 'inherit',
+                    fontSize: 21,
+                    opacity: active ? 1 : 0.82,
+                    fontVariationSettings: active ? '"FILL" 1, "wght" 600' : '"FILL" 0, "wght" 500',
+                    transition: 'all 140ms ease',
+                }}
+            >
                 {icon}
-            </Box>
+            </Icon>
 
             <Typography
                 variant="overline"
                 sx={{
-                    letterSpacing: '0.16em',
+                    letterSpacing: '0.13em',
                     lineHeight: 1.2,
+                    fontWeight: active ? 700 : 600,
                 }}
             >
                 {label}
@@ -78,14 +92,14 @@ function SidebarNav({
                 height: '100%',
                 display: 'flex',
                 flexDirection: 'column',
-                pt: 3,
+                pt: 2.5,
             }}
         >
             {/* Brand */}
             <Box
                 sx={{
                     px: 3,
-                    mb: 4,
+                    mb: 3.25,
                     display: 'flex',
                     alignItems: 'center',
                     gap: 1.5,
@@ -130,7 +144,7 @@ function SidebarNav({
             </Box>
 
             {/* New Chat Button */}
-            <Box sx={{ px: 2, mb: 4 }}>
+            <Box sx={{ px: 2, mb: 3.25 }}>
                 <Button
                     fullWidth
                     variant="contained"
@@ -138,8 +152,13 @@ function SidebarNav({
                     startIcon={<Icon>add_2</Icon>}
                     sx={(theme) => ({
                         justifyContent: 'center',
-                        minHeight: 40,
+                        minHeight: 42,
                         background: `linear-gradient(135deg, ${theme.palette.primary.light} 0%, ${theme.palette.primary.dark} 100%)`,
+                        fontWeight: 700,
+                        letterSpacing: '0.01em',
+                        '&:hover': {
+                            background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+                        },
                     })}
                 >
                     New Chat
@@ -149,31 +168,31 @@ function SidebarNav({
             {/* Primary nav */}
             <Box sx={{ flex: 1 }}>
                 <NavItem
-                    icon={<Icon>home</Icon>}
+                    icon="home"
                     label="Home"
                     active={activeItem === 'home'}
                     onClick={() => onSelect('home')}
                 />
                 <NavItem
-                    icon={<Icon>chat_bubble</Icon>}
+                    icon="chat_bubble"
                     label="Chat"
                     active={activeItem === 'chat'}
                     onClick={() => onSelect('chat')}
                 />
                 <NavItem
-                    icon={<Icon>folder_open</Icon>}
+                    icon="folder_open"
                     label="Files"
                     active={activeItem === 'files'}
                     onClick={() => onSelect('files')}
                 />
                 <NavItem
-                    icon={<Icon>hub</Icon>}
+                    icon="hub"
                     label="Vault / Apps"
                     active={activeItem === 'vault'}
                     onClick={() => onSelect('vault')}
                 />
                 <NavItem
-                    icon={<Icon>history</Icon>}
+                    icon="history"
                     label="History"
                     active={activeItem === 'history'}
                     onClick={() => onSelect('history')}
@@ -183,13 +202,13 @@ function SidebarNav({
             {/* Footer nav */}
             <Box sx={{ mt: 'auto' }}>
                 <NavItem
-                    icon={<Icon>settings</Icon>}
+                    icon="settings"
                     label="Settings"
                     active={activeItem === 'settings'}
                     onClick={() => onSelect('settings')}
                 />
                 <NavItem
-                    icon={<Icon>shield</Icon>}
+                    icon="shield"
                     label="Privacy"
                     active={activeItem === 'about'}
                     onClick={() => onSelect('about')}

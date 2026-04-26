@@ -10,6 +10,8 @@ export class LlamaSidecar {
     private port: number = 0;
     private baseUrl: string = "";
     private modelType: string = "";
+    /** Coalesces concurrent `start()` (e.g. React Strict Mode double-invoke). */
+    private startPromise: Promise<void> | null = null;
 
     getStatus() {
         return { status: this.status, port: this.port, baseUrl: this.baseUrl, modelType: this.modelType };
@@ -51,7 +53,7 @@ export class LlamaSidecar {
         });
     }
 
-    private async waitUntilReady(baseUrl: string, timeoutMs = 20_000) {
+    private async waitUntilReady(baseUrl: string, timeoutMs = 120_000) {
         const start = Date.now();
         while (Date.now() - start < timeoutMs) {
             try {
@@ -66,6 +68,16 @@ export class LlamaSidecar {
     }
 
     async start() {
+        if (this.status === "running" && this.proc) return;
+        if (!this.startPromise) {
+            this.startPromise = this.runStart().finally(() => {
+                this.startPromise = null;
+            });
+        }
+        await this.startPromise;
+    }
+
+    private async runStart() {
         if (this.proc || this.status === "starting" || this.status === "running") return;
 
         this.status = "starting";
@@ -112,12 +124,12 @@ export class LlamaSidecar {
         });
 
         this.proc.on("error", (err) => {
-            console.error("Failed to start process:", err);
+            // console.error("Failed to start process:", err);
             this.status = "error";
         });
 
         this.proc.on("exit", (code, signal) => {
-            console.error(`llama-server exited. code=${code} signal=${signal}`);
+            // console.error(`llama-server exited. code=${code} signal=${signal}`);
             this.proc = null;
             this.status = "stopped";
         });

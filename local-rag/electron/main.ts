@@ -5,6 +5,7 @@ import { registerLlamaStreamIpc } from "./ipc/registerLlamaStreamIpc.js";
 import { registerVectorStoreIpc } from "./ipc/registerVectorStoreIpc.js";
 import { registerEmbedIpc } from "./ipc/registerEmbedIpc.js";
 import { registerFileWatcherIpc } from "./ipc/registerFileWatcherIpc.js";
+import { registerShellIpc } from "./ipc/registerShellIpc.js";
 import { fileWatcher, llama, embedder } from "./services.js";
 import { createWindow } from "./app/createWindow.js";
 
@@ -24,6 +25,7 @@ app.whenReady().then(async () => {
         registerEmbedIpc(); // Called from frontend useEffect
         registerVectorStoreIpc();   // Called from frontend search()
         registerFileWatcherIpc();
+        registerShellIpc();
 
         createWindow();
     } catch (error) {

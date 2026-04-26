@@ -47,6 +47,11 @@ contextBridge.exposeInMainWorld("api", {
             ipcRenderer.invoke("rag:stats"),
     },
 
+    openIndexedPath: (filePath: string) =>
+        ipcRenderer.invoke("shell:openIndexedPath", filePath) as Promise<
+            { ok: true } | { ok: false; error: string }
+        >,
+
     embedder: {
         start: () => ipcRenderer.invoke("embedder:start"),
         stop: () => ipcRenderer.invoke("embedder:stop"),

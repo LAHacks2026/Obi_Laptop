@@ -1,12 +1,24 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { app } from "electron";
 import { env, pipeline } from "@xenova/transformers";
 
 const IMAGE_CAPTION_MODEL_ID = "Xenova/vit-gpt2-image-captioning";
 const IMAGE_VQA_MODEL_ID = "Xenova/donut-base-finetuned-docvqa";
-const IMAGE_OCR_MODEL_ID = "Xenova/trocr-base-printed";
+const OCR_MODEL_IDS = [
+    "Xenova/trocr-base-printed",
+    "Xenova/trocr-small-printed",
+    "Xenova/trocr-base-handwritten",
+] as const;
 const IMAGE_OBJECT_MODEL_ID = "Xenova/detr-resnet-50";
+const DOC_QA_TRANSCRIBE_PROMPTS = [
+    "Transcribe all visible text exactly.",
+    "What is all the text in this image? Return only the text.",
+    "Read the full paragraph text in this image.",
+] as const;
+const execFileAsync = promisify(execFile);
 
 type CaptionPipeline = Awaited<ReturnType<typeof pipeline>>;
 type VqaPipeline = Awaited<ReturnType<typeof pipeline>>;
@@ -28,10 +40,11 @@ type ObjectCacheEntry = {
 export class ImageCaptioner {
     private captioner: CaptionPipeline | null = null;
     private vqaModel: VqaPipeline | null = null;
-    private ocrModel: OcrPipeline | null = null;
+    private readonly ocrModels = new Map<string, OcrPipeline>();
     private objectDetector: ObjectDetectionPipeline | null = null;
     private vqaDisabled = false;
     private objectDetectionDisabled = false;
+    private tesseractUnavailable = false;
     private readonly cache = new Map<string, CacheEntry>();
     private readonly ocrCache = new Map<string, OcrCacheEntry>();
     private readonly objectCache = new Map<string, ObjectCacheEntry>();
@@ -111,13 +124,40 @@ export class ImageCaptioner {
         const candidates = await this.buildOcrCandidates(imagePath);
         let text = "";
         try {
-            for (const candidatePath of candidates) {
-                const output = await ocr(candidatePath, { max_new_tokens: 128 }) as Array<{ generated_text?: string }>;
-                const candidateText = output?.[0]?.generated_text?.replace(/\s+/g, " ").trim() ?? "";
-                if (this.scoreOcrText(candidateText) > this.scoreOcrText(text)) {
-                    text = candidateText;
+            // Multi-pass OCR: try multiple local OCR models and token budgets.
+            for (const modelId of OCR_MODEL_IDS) {
+                let model: OcrPipeline;
+                try {
+                    model = await this.getOcrModel(modelId);
+                } catch {
+                    continue;
+                }
+                for (const candidatePath of candidates) {
+                    for (const maxTokens of [64, 128, 192]) {
+                        const output = await model(candidatePath, { max_new_tokens: maxTokens }) as Array<{ generated_text?: string }>;
+                        const candidateText = output?.[0]?.generated_text?.replace(/\s+/g, " ").trim() ?? "";
+                        if (this.scoreOcrText(candidateText) > this.scoreOcrText(text)) {
+                            text = candidateText;
+                        }
+                    }
                 }
             }
+
+            const docQaText = await this.extractTextViaDocumentQa(imagePath);
+            if (this.scoreOcrText(docQaText) > this.scoreOcrText(text)) {
+                text = docQaText;
+            } else if (docQaText) {
+                text = this.mergeTextCandidates(text, docQaText);
+            }
+
+            const tesseractText = await this.extractTextViaTesseract(imagePath);
+            if (this.scoreOcrText(tesseractText) > this.scoreOcrText(text)) {
+                text = tesseractText;
+            } else if (tesseractText) {
+                text = this.mergeTextCandidates(text, tesseractText);
+            }
+        } catch (error) {
+            console.warn("[imageCaptioner] OCR pass failed, returning best known text so far:", error);
         } finally {
             for (const candidatePath of candidates) {
                 if (candidatePath === imagePath) continue;
@@ -184,13 +224,20 @@ export class ImageCaptioner {
         return this.vqaModel;
     }
 
-    private async getOcrModel() {
-        if (!this.ocrModel) {
-            this.ocrModel = await pipeline("image-to-text", IMAGE_OCR_MODEL_ID, {
+    private async getOcrModel(modelId: string) {
+        const cached = this.ocrModels.get(modelId);
+        if (cached) return cached;
+        try {
+            const created = await pipeline("image-to-text", modelId, {
                 quantized: true,
             });
+            this.ocrModels.set(modelId, created);
+            return created;
+        } catch (error) {
+            // Skip unavailable models and continue with other OCR passes.
+            console.warn(`[imageCaptioner] OCR model unavailable: ${modelId}`, error);
+            throw error;
         }
-        return this.ocrModel;
     }
 
     private async getObjectDetector() {
@@ -209,13 +256,74 @@ export class ImageCaptioner {
         const alphaNumCount = alphaNumMatches.length;
         const uniqueChars = new Set(alphaNumMatches.map((c) => c.toLowerCase())).size;
         const wordCount = normalized.split(/\s+/).filter(Boolean).length;
-        return alphaNumCount + uniqueChars + wordCount * 2;
+        const sentenceMarks = (normalized.match(/[.!?]/g) ?? []).length;
+        const lowerCaseCount = (normalized.match(/[a-z]/g) ?? []).length;
+        const upperCaseCount = (normalized.match(/[A-Z]/g) ?? []).length;
+        const capsPenalty = upperCaseCount > 0 && lowerCaseCount === 0 ? 10 : 0;
+        return alphaNumCount + uniqueChars + wordCount * 3 + sentenceMarks * 6 - capsPenalty;
     }
 
     private async buildOcrCandidates(imagePath: string): Promise<string[]> {
         // Keep runtime robust in Electron bundles: avoid native image preprocessing deps.
         // We can expand this later with a pure-JS preprocessing path if needed.
         return [imagePath];
+    }
+
+    private async extractTextViaDocumentQa(imagePath: string): Promise<string> {
+        if (this.vqaDisabled) return "";
+        let vqa: VqaPipeline;
+        try {
+            vqa = await this.getVqaModel();
+        } catch {
+            return "";
+        }
+
+        const outputs: string[] = [];
+        for (const prompt of DOC_QA_TRANSCRIBE_PROMPTS) {
+            try {
+                const answer = await vqa(imagePath, prompt, { topk: 1 }) as Array<{ answer?: string }>;
+                const text = answer?.[0]?.answer?.replace(/\s+/g, " ").trim() ?? "";
+                if (text) outputs.push(text);
+            } catch {
+                // Keep trying other prompts.
+            }
+        }
+
+        return outputs
+            .sort((a, b) => this.scoreOcrText(b) - this.scoreOcrText(a))[0] ?? "";
+    }
+
+    private mergeTextCandidates(primary: string, secondary: string): string {
+        const a = primary.replace(/\s+/g, " ").trim();
+        const b = secondary.replace(/\s+/g, " ").trim();
+        if (!a) return b;
+        if (!b) return a;
+        if (a.includes(b)) return a;
+        if (b.includes(a)) return b;
+
+        const wordsA = new Set(a.toLowerCase().split(/\s+/));
+        const wordsB = b.toLowerCase().split(/\s+/);
+        const novelty = wordsB.filter((word) => !wordsA.has(word));
+        if (novelty.length < 4) return a;
+        return `${a}\n${b}`.trim();
+    }
+
+    private async extractTextViaTesseract(imagePath: string): Promise<string> {
+        if (this.tesseractUnavailable) return "";
+        try {
+            const { stdout } = await execFileAsync("tesseract", [imagePath, "stdout", "--oem", "1", "--psm", "6"]);
+            return String(stdout ?? "").replace(/\s+/g, " ").trim();
+        } catch (error: any) {
+            const message = String(error?.message ?? error);
+            // Avoid repeated process spawn failures when binary is unavailable.
+            if (message.includes("ENOENT") || message.toLowerCase().includes("not found")) {
+                this.tesseractUnavailable = true;
+                console.warn("[imageCaptioner] tesseract CLI not available; skipping this OCR fallback.");
+                return "";
+            }
+            console.warn("[imageCaptioner] tesseract OCR failed:", error);
+            return "";
+        }
     }
 }
 

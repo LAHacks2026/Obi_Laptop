@@ -160,7 +160,7 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
                             { label: 'Text', value: stats!.textIndexed, icon: 'article', color: theme.palette.primary.main },
                             { label: 'Code', value: stats!.codeIndexed, icon: 'code', color: '#3178C6' },
                             { label: 'Images', value: stats!.imageIndexed, icon: 'image', color: '#9C27B0' },
-                            { label: 'Skipped', value: stats!.skipped, icon: 'skip_next', color: theme.palette.text.secondary as string },
+                            { label: 'Skipped (latest scan)', value: stats!.skipped, icon: 'skip_next', color: theme.palette.text.secondary as string },
                         ].map(({ label, value, icon, color }) => (
                             <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
                                 <Icon sx={{ fontSize: 15, color }}>{icon}</Icon>

@@ -6,6 +6,7 @@ function FileWatcherPicker() {
     const theme = useTheme();
     const [watchedPath, setWatchedPath] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const [maintenanceLoading, setMaintenanceLoading] = useState<null | "clear" | "reindex">(null);
     const [error, setError] = useState<string | null>(null);
     const [stats, setStats] = useState<{
         scanned: number;
@@ -33,6 +34,39 @@ function FileWatcherPicker() {
         } catch {
             setError("An unexpected error occurred.");
             setLoading(false);
+        }
+    }
+
+    async function handleClearIndex() {
+        setMaintenanceLoading("clear");
+        setError(null);
+        try {
+            const result = await window.watcher.clearIndex();
+            setStats(result.indexingStats);
+            if (!result.rootPath) {
+                setWatchedPath(null);
+            }
+        } catch {
+            setError("Failed to clear index.");
+        } finally {
+            setMaintenanceLoading(null);
+        }
+    }
+
+    async function handleReindex() {
+        setMaintenanceLoading("reindex");
+        setError(null);
+        try {
+            const result = await window.watcher.reindex();
+            if (result.warning === "no_root_path") {
+                setError("Pick a folder first, then reindex.");
+            }
+            setWatchedPath(result.rootPath);
+            setStats(result.indexingStats);
+        } catch {
+            setError("Reindex failed. Check logs and try again.");
+        } finally {
+            setMaintenanceLoading(null);
         }
     }
 
@@ -83,11 +117,33 @@ function FileWatcherPicker() {
                 variant={loading ? "outlined" : "contained"}
                 startIcon={loading ? <CircularProgress size={14} color="inherit" /> : <Icon>folder</Icon>}
                 onClick={handlePick}
-                disabled={loading}
+                disabled={loading || maintenanceLoading !== null}
                 sx={{ mb: 1.25, fontSize: '0.8rem' }}
             >
                 {loading ? "Indexing…" : "Choose folder"}
             </Button>
+
+            <Box sx={{ display: "flex", gap: 1, mb: 1.25, flexWrap: "wrap" }}>
+                <Button
+                    variant="outlined"
+                    color="warning"
+                    startIcon={maintenanceLoading === "clear" ? <CircularProgress size={14} color="inherit" /> : <Icon>delete_sweep</Icon>}
+                    onClick={handleClearIndex}
+                    disabled={loading || maintenanceLoading !== null}
+                    sx={{ fontSize: "0.75rem" }}
+                >
+                    {maintenanceLoading === "clear" ? "Clearing…" : "Clear index"}
+                </Button>
+                <Button
+                    variant="outlined"
+                    startIcon={maintenanceLoading === "reindex" ? <CircularProgress size={14} color="inherit" /> : <Icon>refresh</Icon>}
+                    onClick={handleReindex}
+                    disabled={loading || maintenanceLoading !== null}
+                    sx={{ fontSize: "0.75rem" }}
+                >
+                    {maintenanceLoading === "reindex" ? "Reindexing…" : "Clear + reindex"}
+                </Button>
+            </Box>
 
             <Typography sx={{ fontSize: '0.76rem', color: theme.palette.text.secondary, mb: 0.5 }}>
                 Using default safe indexing rules (code files off, skip filtering on).

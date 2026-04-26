@@ -30,11 +30,17 @@ type AppProps = {
     onToggleTheme: () => void;
 };
 
-const MAX_IMAGE_CAPTIONS_PER_QUERY = 3;
+const MAX_IMAGE_CAPTIONS_PER_QUERY = 2;
 const MAX_VISUAL_QA_IMAGES = 2;
-const MAX_OCR_TEXT_CHARS = 320;
 const MIN_OCR_TEXT_LEN = 4;
 const DEBUG_IMAGE_TEXT_ROUTING = true;
+
+// Prompt-size guards so we never overrun llama-server's 8192 ctx
+const MAX_CHARS_PER_RAG_RESULT = 600;
+const MAX_RAG_PREFIX_CHARS = 3500;
+const MAX_VISUAL_QA_CONTEXT_CHARS = 1200;
+const MAX_AUGMENTED_USER_CHARS = 6000;
+const MAX_HISTORY_MESSAGES = 6; // excludes the leading system prompt
 
 function App({ selectedTheme, onToggleTheme }: AppProps) {
     /********************************************
@@ -187,8 +193,22 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
             setLastError(`RAG search failed: ${String((e as Error)?.message ?? e)}`);
         }
 
-        const augmentedUserMsg: Msg = { role: "user", content: augmentedContent };
-        const nextMessages = [...history, augmentedUserMsg];
+        const safeAugmentedContent = clampText(
+            sanitizeForPrompt(augmentedContent),
+            MAX_AUGMENTED_USER_CHARS
+        );
+        const augmentedUserMsg: Msg = { role: "user", content: safeAugmentedContent };
+        const trimmedHistory = trimHistoryForLlama(history);
+        const nextMessages = [...trimmedHistory, augmentedUserMsg];
+
+        const totalChars = nextMessages.reduce((sum, m) => sum + (m.content?.length ?? 0), 0);
+        console.log("[chat] outgoing payload:", {
+            messages: nextMessages.length,
+            totalChars,
+            ragResults: ragResults.length,
+            imageResults: ragResults.filter((r) => r.modality === "image").length,
+            augmentedUserChars: safeAugmentedContent.length,
+        });
 
         const offDelta = window.llama.onChatStreamDelta?.((payload: any) => {
             if (payload?.requestId !== requestId) return;
@@ -300,53 +320,28 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
         if (!imageTargets.length) return results;
 
         const descriptionByPath = new Map<string, string>();
-        const ocrTextByPath = new Map<string, string>();
-        const objectLabelsByPath = new Map<string, string[]>();
-        await Promise.all(
-            imageTargets.map(async (imageResult) => {
-                try {
-                    const caption = await window.api.rag.describeImage(imageResult.documentPath);
-                    if (caption?.trim()) {
-                        descriptionByPath.set(imageResult.documentPath, caption.trim());
-                    }
-                } catch (error) {
-                    console.warn("Image caption failed for:", imageResult.documentPath, error);
+        // Run sequentially: the captioner pipeline loads on first call and is heavy.
+        // Concurrent first-time calls used to race the model load and double memory pressure.
+        for (const imageResult of imageTargets) {
+            try {
+                const caption = await window.api.rag.describeImage(imageResult.documentPath);
+                if (caption?.trim()) {
+                    descriptionByPath.set(imageResult.documentPath, caption.trim());
                 }
-                try {
-                    const ocrText = await window.api.rag.extractImageText(imageResult.documentPath);
-                    if (ocrText?.trim()) {
-                        ocrTextByPath.set(imageResult.documentPath, ocrText.trim());
-                    }
-                } catch (error) {
-                    console.warn("OCR failed for:", imageResult.documentPath, error);
-                }
-                try {
-                    const labels = await window.api.rag.detectImageObjects(imageResult.documentPath);
-                    if (Array.isArray(labels) && labels.length) {
-                        objectLabelsByPath.set(imageResult.documentPath, labels);
-                    }
-                } catch (error) {
-                    console.warn("Object detection failed for:", imageResult.documentPath, error);
-                }
-            })
-        );
+            } catch (error) {
+                console.warn("Image caption failed for:", imageResult.documentPath, error);
+            }
+        }
 
-        if (!descriptionByPath.size && !ocrTextByPath.size && !objectLabelsByPath.size) return results;
+        if (!descriptionByPath.size) return results;
 
         return results.map((result) => {
             const caption = descriptionByPath.get(result.documentPath);
-            const ocrText = ocrTextByPath.get(result.documentPath);
-            const labels = objectLabelsByPath.get(result.documentPath) ?? [];
-            if (!caption && !ocrText && !labels.length) return result;
+            if (!caption) return result;
 
-            const normalizedOcr = normalizeOcrText(ocrText ?? "");
-            const ocrLine = normalizedOcr
-                ? `\nOCR: ${normalizedOcr.slice(0, MAX_OCR_TEXT_CHARS)}${normalizedOcr.length > MAX_OCR_TEXT_CHARS ? "..." : ""}`
-                : "";
-            const objectLine = labels.length ? `\nObjects: ${labels.join(", ")}` : "";
             return {
                 ...result,
-                content: `[image] ${result.fileName}${caption ? `\nCaption: ${caption}` : ""}${objectLine}${ocrLine}`,
+                content: `[image] ${result.fileName}\nCaption: ${caption}`,
             };
         });
     };
@@ -363,21 +358,22 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
         if (!candidates.length) return "";
 
         const targets = candidates.slice(0, MAX_VISUAL_QA_IMAGES);
-        const answers = await Promise.all(
-            targets.map(async (target) => {
-                try {
-                    const answer = await window.api.rag.answerImageQuestion(target.documentPath, question);
-                    return {
-                        fileName: target.fileName,
-                        documentPath: target.documentPath,
-                        answer,
-                    };
-                } catch (error) {
-                    console.warn("Visual QA failed for:", target.documentPath, error);
-                    return null;
-                }
-            })
-        );
+        // Run sequentially: VQA pipeline is also a heavy ONNX session that loads on first call.
+        // Concurrent first-time calls would race the model init and waste memory.
+        const answers: Array<{ fileName: string; documentPath: string; answer: string } | null> = [];
+        for (const target of targets) {
+            try {
+                const answer = await window.api.rag.answerImageQuestion(target.documentPath, question);
+                answers.push({
+                    fileName: target.fileName,
+                    documentPath: target.documentPath,
+                    answer,
+                });
+            } catch (error) {
+                console.warn("Visual QA failed for:", target.documentPath, error);
+                answers.push(null);
+            }
+        }
 
         const successful = answers.filter(Boolean) as Array<{
             fileName: string;
@@ -386,31 +382,39 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
         }>;
         if (!successful.length) return "";
 
-        const lines = successful.map((item, index) =>
-            `Visual QA ${index + 1}: ${item.fileName}\nPath: ${item.documentPath}\nAnswer: ${item.answer}`
-        );
-        return `Use these visual QA answers as primary evidence for image-specific details.\n\n${lines.join("\n\n")}`;
+        const lines = successful.map((item, index) => {
+            const safeAnswer = clampText(sanitizeForPrompt(item.answer ?? ""), 400);
+            return `Visual QA ${index + 1}: ${item.fileName}\nPath: ${item.documentPath}\nAnswer: ${safeAnswer}`;
+        });
+        const body = clampText(lines.join("\n\n"), MAX_VISUAL_QA_CONTEXT_CHARS);
+        return `Use these visual QA answers as primary evidence for image-specific details.\n\n${body}`;
     };
 
     const buildRagContextPrefix = (results: SearchResult[]): string => {
         if (!results.length) return "";
 
         const context = results
-            .map((r, i) =>
-                [
+            .map((r, i) => {
+                const safeContent = clampText(
+                    sanitizeForPrompt(r.content ?? ""),
+                    MAX_CHARS_PER_RAG_RESULT
+                );
+                return [
                     `Source ${i + 1}: ${r.fileName}`,
                     `Path: ${r.documentPath}`,
-                    `Content: ${r.content}`,
-                ].join("\n")
-            )
+                    `Content: ${safeContent}`,
+                ].join("\n");
+            })
             .join("\n\n---\n\n");
+
+        const clampedContext = clampText(context, MAX_RAG_PREFIX_CHARS);
 
         return (
             "Use the retrieved context below to answer the question. " +
             "Prefer this context when relevant; if image captions are included, treat them as visual evidence. " +
             "If OCR lines are included, treat them as text extracted from images. " +
             "Say plainly if context is insufficient.\n\n" +
-            context +
+            clampedContext +
             "\n\n---\n\nQuestion: "
         );
     };
@@ -534,6 +538,33 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
 }
 
 export default App;
+
+function sanitizeForPrompt(text: string): string {
+    if (!text) return "";
+    // Strip control chars except \n and \t; collapse runs of whitespace; trim.
+    return text
+        .replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, " ")
+        .replace(/[ \t]+/g, " ")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+}
+
+function clampText(text: string, max: number): string {
+    if (!text) return "";
+    if (text.length <= max) return text;
+    return text.slice(0, max).trimEnd() + "…";
+}
+
+function trimHistoryForLlama(history: Msg[]): Msg[] {
+    if (history.length <= 1) return history;
+    const [system, ...rest] = history;
+    const recent = rest
+        .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+        // drop any empty assistant placeholders left over from canceled streams
+        .filter((m) => !(m.role === "assistant" && !m.content.trim()));
+    const tail = recent.slice(-MAX_HISTORY_MESSAGES);
+    return system ? [system, ...tail] : tail;
+}
 
 function isVisualQuestion(question: string): boolean {
     const normalized = question.toLowerCase();

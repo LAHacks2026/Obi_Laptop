@@ -109,6 +109,15 @@ declare global {
                     imageIndexed: number
                     lastIndexedAtMs: number | null
                 }>
+                imageEmbeddingStatus: () => Promise<{
+                    imageDocCount: number
+                    imageEmbeddingCount: number
+                    expectedDimensions: number
+                    queryEmbeddingDim: number | null
+                    queryEmbeddingError: string | null
+                    sampleImage: { path: string; file_name: string } | null
+                    isWorking: boolean
+                }>
             }
 
             openIndexedPath: (
@@ -193,6 +202,35 @@ declare global {
                     imageIndexed: number
                     lastIndexedAtMs: number | null
                 }
+            }>
+            clearIndex: () => Promise<{
+                status: string
+                rootPath: string | null
+                indexingOptions: { includeCodeFiles: boolean; indexAllFiles: boolean }
+                indexingStats: {
+                    scanned: number
+                    indexed: number
+                    skipped: number
+                    textIndexed: number
+                    codeIndexed: number
+                    imageIndexed: number
+                    lastIndexedAtMs: number | null
+                }
+            }>
+            reindex: () => Promise<{
+                status: string
+                rootPath: string | null
+                indexingOptions: { includeCodeFiles: boolean; indexAllFiles: boolean }
+                indexingStats: {
+                    scanned: number
+                    indexed: number
+                    skipped: number
+                    textIndexed: number
+                    codeIndexed: number
+                    imageIndexed: number
+                    lastIndexedAtMs: number | null
+                }
+                warning?: "no_root_path"
             }>
         }
     }

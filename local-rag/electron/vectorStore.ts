@@ -45,6 +45,10 @@ export class VectorStore {
     ) { }
 
     async indexDirectory(rootPath: string, options: IndexingOptions = {}) {
+        // Reset per-run counters so "skipped/scanned" reflects the latest full scan.
+        this.stats.scanned = 0
+        this.stats.skipped = 0
+
         const rules = new IndexingRules(rootPath, options)
         const files = walkDirectory(rootPath, rules)
         let indexedCount = 0
@@ -57,11 +61,17 @@ export class VectorStore {
                 continue
             }
 
-            const result = await this.indexFile(filePath, modality)
-            if (result.skipped) {
+            try {
+                const result = await this.indexFile(filePath, modality)
+                if (result.skipped) {
+                    skippedCount += 1
+                } else {
+                    indexedCount += 1
+                }
+            } catch (error) {
                 skippedCount += 1
-            } else {
-                indexedCount += 1
+                this.stats.skipped += 1
+                console.error("[vectorStore] failed indexing file:", filePath, error)
             }
         }
 
@@ -210,12 +220,24 @@ export class VectorStore {
             return { skipped: true as const, reason: "unchanged" as const }
         }
 
-        const embedding = await this.embedImage(filePath)
+        let embedding: number[]
+        try {
+            embedding = await this.embedImage(filePath)
+        } catch (error) {
+            this.stats.skipped += 1
+            console.error("[vectorStore] image embedding failed; skipping image:", filePath, error)
+            return { skipped: true as const, reason: "image_embedding_failed" as const }
+        }
         if (embedding.length !== this.imageEmbeddingDimensions) {
             throw new Error(
                 `Image embedding dimension mismatch. Expected ${this.imageEmbeddingDimensions}, got ${embedding.length}`
             )
         }
+        console.log(
+            "[vectorStore] image embedding produced:",
+            filePath,
+            `dim=${embedding.length}`
+        )
 
         let imageId!: number
         const tx = db.transaction(() => {
@@ -250,14 +272,23 @@ export class VectorStore {
     async search(query: string, limit = 5): Promise<SearchResult[]> {
         const db = getDb()
         const queryEmbedding = await this.embedOne(query)
-        const imageQueryEmbedding = await this.embedImageQuery(query)
+        let imageQueryEmbedding: number[] | null = null
+        try {
+            imageQueryEmbedding = await this.embedImageQuery(query)
+            console.log(
+                "[vectorStore] image query embedding ok:",
+                `dim=${imageQueryEmbedding?.length ?? 0}`
+            )
+        } catch (error) {
+            console.warn("[vectorStore] image query embedding failed; using text-only fallback", error)
+        }
 
         if (queryEmbedding.length !== this.embeddingDimensions) {
             throw new Error(
                 `Embedding dimension mismatch. Expected ${this.embeddingDimensions}, got ${queryEmbedding.length}`
             )
         }
-        if (imageQueryEmbedding.length !== this.imageEmbeddingDimensions) {
+        if (imageQueryEmbedding && imageQueryEmbedding.length !== this.imageEmbeddingDimensions) {
             throw new Error(
                 `Image query embedding dimension mismatch. Expected ${this.imageEmbeddingDimensions}, got ${imageQueryEmbedding.length}`
             )
@@ -309,25 +340,33 @@ export class VectorStore {
             bm25_score: number
         }>
 
-        const imageRows = db.prepare(
-            `SELECT
-                i.id AS image_id,
-                i.path AS document_path,
-                i.file_name AS file_name,
-                distance
-            FROM image_embeddings_clip
-            JOIN image_documents i ON i.id = image_embeddings_clip.image_id
-            WHERE embedding MATCH ?
-                AND k = ?
-            ORDER BY distance ASC`
-        ).all(serializeVector(imageQueryEmbedding), limit) as Array<{
+        let imageRows: Array<{
             image_id: number
             document_path: string
             file_name: string
             distance: number
-        }>
+        }> = []
+        if (imageQueryEmbedding) {
+            imageRows = db.prepare(
+                `SELECT
+                    i.id AS image_id,
+                    i.path AS document_path,
+                    i.file_name AS file_name,
+                    distance
+                FROM image_embeddings_clip
+                JOIN image_documents i ON i.id = image_embeddings_clip.image_id
+                WHERE embedding MATCH ?
+                    AND k = ?
+                ORDER BY distance ASC`
+            ).all(serializeVector(imageQueryEmbedding), limit) as Array<{
+                image_id: number
+                document_path: string
+                file_name: string
+                distance: number
+            }>
+        }
 
-        const merged = mergeRankedResults(textSemanticRows, textLexicalRows, imageRows)
+        const merged = mergeRankedResults(query, textSemanticRows, textLexicalRows, imageRows)
 
         return merged.slice(0, limit).map((row) => ({
             chunkId: row.chunkId,
@@ -371,16 +410,107 @@ export class VectorStore {
         return { deleted: Boolean(row || imageRow) }
     }
 
+    async clearIndex() {
+        const db = getDb()
+        const tx = db.transaction(() => {
+            db.prepare("DELETE FROM chunk_embeddings").run()
+            db.prepare("DELETE FROM chunks_fts").run()
+            db.prepare("DELETE FROM chunks").run()
+            db.prepare("DELETE FROM documents").run()
+            db.prepare("DELETE FROM image_embeddings_clip").run()
+            db.prepare("DELETE FROM image_documents").run()
+        })
+        tx()
+
+        this.stats.scanned = 0
+        this.stats.skipped = 0
+        this.stats.lastIndexedAtMs = Date.now()
+        return { ok: true as const }
+    }
+
+    async getImageEmbeddingStatus() {
+        const db = getDb()
+
+        const imageDocCount = (db
+            .prepare("SELECT COUNT(*) AS count FROM image_documents")
+            .get() as { count: number } | undefined)?.count ?? 0
+
+        const imageEmbeddingCount = (db
+            .prepare("SELECT COUNT(*) AS count FROM image_embeddings_clip")
+            .get() as { count: number } | undefined)?.count ?? 0
+
+        const sampleRow = db
+            .prepare(`
+                SELECT i.path AS path, i.file_name AS file_name
+                FROM image_documents i
+                JOIN image_embeddings_clip e ON e.image_id = i.id
+                LIMIT 1
+            `)
+            .get() as { path: string; file_name: string } | undefined
+
+        let queryEmbeddingDim: number | null = null
+        let queryEmbeddingError: string | null = null
+        try {
+            const vec = await this.embedImageQuery("a photo for diagnostic test")
+            queryEmbeddingDim = vec.length
+        } catch (error) {
+            queryEmbeddingError = error instanceof Error ? error.message : String(error)
+        }
+
+        const status = {
+            imageDocCount,
+            imageEmbeddingCount,
+            expectedDimensions: this.imageEmbeddingDimensions,
+            queryEmbeddingDim,
+            queryEmbeddingError,
+            sampleImage: sampleRow ?? null,
+            isWorking:
+                imageEmbeddingCount > 0 &&
+                queryEmbeddingDim === this.imageEmbeddingDimensions &&
+                queryEmbeddingError === null,
+        }
+
+        console.log("[vectorStore] image embedding status:", status)
+        return status
+    }
+
     getStats() {
-        return { ...this.stats }
+        const db = getDb()
+
+        const textAndCodeRows = db
+            .prepare("SELECT path FROM documents")
+            .all() as Array<{ path: string }>
+        const imageRows = db
+            .prepare("SELECT COUNT(*) AS count FROM image_documents")
+            .get() as { count: number }
+
+        let textIndexed = 0
+        let codeIndexed = 0
+        for (const row of textAndCodeRows) {
+            const modality = inferModality(row.path)
+            if (modality === "code") {
+                codeIndexed += 1
+            } else {
+                textIndexed += 1
+            }
+        }
+
+        const imageIndexed = Number(imageRows?.count ?? 0)
+        const indexed = textIndexed + codeIndexed + imageIndexed
+
+        return {
+            ...this.stats,
+            indexed,
+            textIndexed,
+            codeIndexed,
+            imageIndexed,
+        }
     }
 
     private recordIndexed(modality: IndexedModality) {
-        this.stats.indexed += 1
         this.stats.lastIndexedAtMs = Date.now()
-        if (modality === "text") this.stats.textIndexed += 1
-        if (modality === "code") this.stats.codeIndexed += 1
-        if (modality === "image") this.stats.imageIndexed += 1
+        // Totals are derived from the DB in getStats() to avoid drift.
+        void modality
     }
 }
 
@@ -570,6 +700,7 @@ function buildFtsQuery(query: string): string {
 }
 
 function mergeRankedResults(
+    query: string,
     textSemanticRows: Array<{
         chunk_id: number
         document_path: string
@@ -594,6 +725,10 @@ function mergeRankedResults(
     }>
 ): RankedResult[] {
     const rrfK = 60
+    const visualQuery = isLikelyVisualQuery(query)
+    const textSemanticWeight = visualQuery ? 0.45 : 0.55
+    const textLexicalWeight = visualQuery ? 0.2 : 0.3
+    const imageWeight = visualQuery ? 0.8 : 0.45
     const scoreMap = new Map<string, RankedResult>()
 
     const upsertScore = (
@@ -628,7 +763,7 @@ function mergeRankedResults(
                 sectionTitle: row.section_title ?? "",
             },
             index + 1,
-            0.55
+            textSemanticWeight
         )
     })
 
@@ -645,7 +780,7 @@ function mergeRankedResults(
                 sectionTitle: row.section_title ?? "",
             },
             index + 1,
-            0.3
+            textLexicalWeight
         )
     })
 
@@ -662,7 +797,7 @@ function mergeRankedResults(
                 sectionTitle: "",
             },
             index + 1,
-            0.45
+            imageWeight
         )
     })
 
@@ -674,5 +809,29 @@ function mergeRankedResults(
         }))
 
     return merged
+}
+
+function isLikelyVisualQuery(query: string): boolean {
+    const normalized = query.toLowerCase()
+    return [
+        "image",
+        "photo",
+        "picture",
+        "screenshot",
+        "diagram",
+        "graph",
+        "figure",
+        "logo",
+        "icon",
+        "show",
+        "see",
+        "looks like",
+        "what is in",
+        "what's in",
+        "in the image",
+        "text in",
+        "read this",
+        "ocr",
+    ].some((token) => normalized.includes(token))
 }
 

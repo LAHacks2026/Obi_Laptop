@@ -34,4 +34,12 @@ export function registerFileWatcherIpc() {
         await fileWatcher.setPath(selectedPath, options)
         return { canceled: false, path: selectedPath, ...fileWatcher.getStatus() }
     })
+
+    ipcMain.handle("watcher:clearIndex", async () => {
+        return fileWatcher.clearIndex()
+    })
+
+    ipcMain.handle("watcher:reindex", async () => {
+        return fileWatcher.reindex()
+    })
 }

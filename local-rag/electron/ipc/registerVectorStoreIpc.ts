@@ -104,4 +104,8 @@ export function registerVectorStoreIpc() {
     ipcMain.handle("rag:stats", async () => {
         return vectorStore.getStats()
     })
+
+    ipcMain.handle("rag:imageEmbeddingStatus", async () => {
+        return vectorStore.getImageEmbeddingStatus()
+    })
 }

@@ -15,6 +15,7 @@ export default defineConfig({
               external: [
                 "better-sqlite3",
                 "sqlite-vec",
+                "sharp",
                 "onnxruntime-node",
                 "onnxruntime-common",
                 "onnxruntime-web",

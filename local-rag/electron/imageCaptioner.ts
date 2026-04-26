@@ -8,6 +8,19 @@ const IMAGE_VQA_MODEL_ID = "Xenova/donut-base-finetuned-docvqa";
 const IMAGE_OCR_MODEL_ID = "Xenova/trocr-base-printed";
 const IMAGE_OBJECT_MODEL_ID = "Xenova/detr-resnet-50";
 
+// Disabled: vit-gpt2 floods Electron stdout with "Removing initializer …" warnings
+// from the GPT-2 decoder cross-attention constants on every load. The warnings are
+// emitted by ONNX Runtime's native C++ logger (onnxruntime-node), so they can't be
+// silenced from the JS side. Image search still works via CLIP retrieval + OCR.
+// Flip this back to true if you re-enable a quieter caption model.
+const CAPTIONING_ENABLED = true;
+
+// Disabled: donut-base-finetuned-docvqa produces the same "Removing initializer …"
+// flood from its decoder layers. Visual questions now fall back to text-only answers
+// from the chat model using the retrieved image filenames + OCR / CLIP signal.
+// Flip this back to true if you re-enable a quieter VQA model.
+const VQA_ENABLED = false;
+
 type CaptionPipeline = Awaited<ReturnType<typeof pipeline>>;
 type VqaPipeline = Awaited<ReturnType<typeof pipeline>>;
 type OcrPipeline = Awaited<ReturnType<typeof pipeline>>;
@@ -26,10 +39,10 @@ type ObjectCacheEntry = {
 };
 
 export class ImageCaptioner {
-    private captioner: CaptionPipeline | null = null;
-    private vqaModel: VqaPipeline | null = null;
-    private ocrModel: OcrPipeline | null = null;
-    private objectDetector: ObjectDetectionPipeline | null = null;
+    private captionerPromise: Promise<CaptionPipeline> | null = null;
+    private vqaModelPromise: Promise<VqaPipeline> | null = null;
+    private ocrModelPromise: Promise<OcrPipeline> | null = null;
+    private objectDetectorPromise: Promise<ObjectDetectionPipeline> | null = null;
     private vqaDisabled = false;
     private objectDetectionDisabled = false;
     private readonly cache = new Map<string, CacheEntry>();
@@ -45,9 +58,22 @@ export class ImageCaptioner {
         env.allowLocalModels = true;
         env.useBrowserCache = false;
         env.cacheDir = cacheDir;
+
+        // Quieten ONNX Runtime: only emit errors, not the noisy "Removing initializer" warnings
+        // that can flood Electron logs and contribute to crashes under heavy load.
+        const backends = (env as unknown as { backends?: { onnx?: { logSeverityLevel?: number } } }).backends;
+        if (backends?.onnx) {
+            backends.onnx.logSeverityLevel = 3; // 0=verbose, 1=info, 2=warn, 3=error, 4=fatal
+        }
     }
 
     async describeImage(imagePath: string): Promise<string> {
+        if (!CAPTIONING_ENABLED) {
+            // Captioning is intentionally disabled to avoid the noisy ONNX warnings.
+            // Returning empty lets callers (e.g. enrichImageResultsWithCaptions) skip enrichment cleanly.
+            return "";
+        }
+
         const stat = fs.statSync(imagePath);
         const updatedAtMs = Math.trunc(stat.mtimeMs);
         const cached = this.cache.get(imagePath);
@@ -70,6 +96,12 @@ export class ImageCaptioner {
     }
 
     async answerQuestion(imagePath: string, question: string): Promise<string> {
+        if (!VQA_ENABLED) {
+            // VQA pipeline intentionally disabled to avoid the noisy ONNX warnings.
+            // Returning empty lets buildVisualQaContext skip enrichment cleanly.
+            return "";
+        }
+
         const normalizedQuestion = question.trim();
         if (!normalizedQuestion) {
             throw new Error("Question must not be empty.");
@@ -167,39 +199,55 @@ export class ImageCaptioner {
     }
 
     private async getCaptioner() {
-        if (!this.captioner) {
-            this.captioner = await pipeline("image-to-text", IMAGE_CAPTION_MODEL_ID, {
+        if (!this.captionerPromise) {
+            console.log("[imageCaptioner] loading caption pipeline (one-time):", IMAGE_CAPTION_MODEL_ID);
+            this.captionerPromise = pipeline("image-to-text", IMAGE_CAPTION_MODEL_ID, {
                 quantized: true,
+            }).catch((error) => {
+                this.captionerPromise = null;
+                throw error;
             });
         }
-        return this.captioner;
+        return this.captionerPromise;
     }
 
     private async getVqaModel() {
-        if (!this.vqaModel) {
-            this.vqaModel = await pipeline("document-question-answering", IMAGE_VQA_MODEL_ID, {
+        if (!this.vqaModelPromise) {
+            console.log("[imageCaptioner] loading VQA pipeline (one-time):", IMAGE_VQA_MODEL_ID);
+            this.vqaModelPromise = pipeline("document-question-answering", IMAGE_VQA_MODEL_ID, {
                 quantized: true,
+            }).catch((error) => {
+                this.vqaModelPromise = null;
+                throw error;
             });
         }
-        return this.vqaModel;
+        return this.vqaModelPromise;
     }
 
     private async getOcrModel() {
-        if (!this.ocrModel) {
-            this.ocrModel = await pipeline("image-to-text", IMAGE_OCR_MODEL_ID, {
+        if (!this.ocrModelPromise) {
+            console.log("[imageCaptioner] loading OCR pipeline (one-time):", IMAGE_OCR_MODEL_ID);
+            this.ocrModelPromise = pipeline("image-to-text", IMAGE_OCR_MODEL_ID, {
                 quantized: true,
+            }).catch((error) => {
+                this.ocrModelPromise = null;
+                throw error;
             });
         }
-        return this.ocrModel;
+        return this.ocrModelPromise;
     }
 
     private async getObjectDetector() {
-        if (!this.objectDetector) {
-            this.objectDetector = await pipeline("object-detection", IMAGE_OBJECT_MODEL_ID, {
+        if (!this.objectDetectorPromise) {
+            console.log("[imageCaptioner] loading object detector (one-time):", IMAGE_OBJECT_MODEL_ID);
+            this.objectDetectorPromise = pipeline("object-detection", IMAGE_OBJECT_MODEL_ID, {
                 quantized: true,
+            }).catch((error) => {
+                this.objectDetectorPromise = null;
+                throw error;
             });
         }
-        return this.objectDetector;
+        return this.objectDetectorPromise;
     }
 
     private scoreOcrText(text: string): number {

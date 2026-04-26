@@ -69,6 +69,8 @@ contextBridge.exposeInMainWorld("api", {
             ipcRenderer.invoke("rag:getSourcePreview", filePath),
         stats: () =>
             ipcRenderer.invoke("rag:stats"),
+        imageEmbeddingStatus: () =>
+            ipcRenderer.invoke("rag:imageEmbeddingStatus"),
     },
 
     openIndexedPath: (filePath: string) =>
@@ -88,4 +90,6 @@ contextBridge.exposeInMainWorld("watcher", {
     stop: () => ipcRenderer.invoke("watcher:stop"),
     status: () => ipcRenderer.invoke("watcher:status"),
     pickDirectory: (options?: { includeCodeFiles?: boolean; indexAllFiles?: boolean }) => ipcRenderer.invoke("watcher:pickDirectory", options),
+    clearIndex: () => ipcRenderer.invoke("watcher:clearIndex"),
+    reindex: () => ipcRenderer.invoke("watcher:reindex"),
 })

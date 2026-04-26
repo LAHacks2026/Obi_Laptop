@@ -33,17 +33,51 @@ app.whenReady().then(async () => {
     }
 });
 
+process.on("uncaughtException", (error) => {
+    console.error("[main] uncaughtException:", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+    console.error("[main] unhandledRejection:", reason);
+});
+
 app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
 })
 
+app.on("render-process-gone", (_event, webContents, details) => {
+    console.error("[main] render-process-gone:", {
+        reason: details.reason,
+        exitCode: details.exitCode,
+        webContentsId: webContents.id,
+    });
+});
+
+app.on("child-process-gone", (_event, details) => {
+    console.error("[main] child-process-gone:", details);
+});
+
 // App shutdown logic
 app.on("window-all-closed", () => {
+    console.info("[main] window-all-closed");
     if (process.platform !== "darwin") app.quit()
 })
 
-app.on("before-quit", () => {
-    fileWatcher.stop();
-    llama.stop();
-    embedder.stop();
+app.on("before-quit", async () => {
+    console.info("[main] before-quit");
+    try {
+        await fileWatcher.stop();
+    } catch (error) {
+        console.error("[main] fileWatcher.stop failed:", error);
+    }
+    try {
+        await llama.stop();
+    } catch (error) {
+        console.error("[main] llama.stop failed:", error);
+    }
+    try {
+        await embedder.stop();
+    } catch (error) {
+        console.error("[main] embedder.stop failed:", error);
+    }
 });

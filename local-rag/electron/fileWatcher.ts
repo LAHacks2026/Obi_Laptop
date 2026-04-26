@@ -38,7 +38,13 @@ export class FileWatcher {
         this.indexingRules = new IndexingRules(rootPath, this.indexingOptions);
 
         const rules = this.indexingRules;
-        await this.vectorStore.indexDirectory(rootPath, this.indexingOptions);
+        try {
+            await this.vectorStore.indexDirectory(rootPath, this.indexingOptions);
+        } catch (error) {
+            this.status = "error"
+            console.error("[fileWatcher] initial indexing failed:", error)
+            return
+        }
 
         this.watcher = chokidar.watch(rootPath, {
             persistent: true,
@@ -97,6 +103,20 @@ export class FileWatcher {
         })
 
         this.status = "running"
+    }
+
+    async clearIndex() {
+        await this.vectorStore.clearIndex()
+        return this.getStatus()
+    }
+
+    async reindex() {
+        if (!this.rootPath) {
+            return { ...this.getStatus(), warning: "no_root_path" as const }
+        }
+        await this.vectorStore.clearIndex()
+        await this.start(this.rootPath, this.indexingOptions)
+        return this.getStatus()
     }
 
     async stop() {

@@ -1,5 +1,6 @@
-import { Box, Icon, Typography } from "@mui/material";
+import { Box, Button, Icon, Typography } from "@mui/material";
 import { useTheme, alpha } from "@mui/material/styles";
+import { useEffect, useState } from "react";
 import AppConnectionCard from "../ui/AppConnectionCard";
 
 const APPS = [
@@ -49,6 +50,61 @@ const APPS = [
 
 export default function VaultAppsScreen() {
     const theme = useTheme();
+    const [gmailStatus, setGmailStatus] = useState<{
+        connected: boolean;
+        syncing: boolean;
+        lastError: string | null;
+        indexedCount: number;
+        lastSyncedAtMs: number | null;
+    } | null>(null);
+    const [gmailActionError, setGmailActionError] = useState<string | null>(null);
+
+    const loadGmailStatus = async () => {
+        try {
+            const status = await window.api.gmail.status();
+            setGmailStatus(status);
+        } catch (error) {
+            setGmailActionError(String((error as Error)?.message ?? error));
+        }
+    };
+
+    useEffect(() => {
+        void loadGmailStatus();
+    }, []);
+
+    const handleGmailSync = async () => {
+        setGmailActionError(null);
+        try {
+            await window.api.gmail.syncMetadata(200);
+            await loadGmailStatus();
+        } catch (error) {
+            setGmailActionError(String((error as Error)?.message ?? error));
+            await loadGmailStatus();
+        }
+    };
+
+    const handleGmailClear = async () => {
+        setGmailActionError(null);
+        try {
+            await window.api.gmail.clearIndex();
+            await loadGmailStatus();
+        } catch (error) {
+            setGmailActionError(String((error as Error)?.message ?? error));
+            await loadGmailStatus();
+        }
+    };
+
+    const gmailCardStatus = gmailStatus?.syncing
+        ? "indexing"
+        : gmailStatus?.lastError
+            ? "error"
+            : gmailStatus?.connected
+                ? "connected"
+                : "not-connected";
+    const gmailLastSynced = gmailStatus?.lastSyncedAtMs
+        ? new Date(gmailStatus.lastSyncedAtMs).toLocaleString()
+        : "Never";
+    const gmailIndexedCount = gmailStatus?.indexedCount ?? 0;
 
     return (
         <Box sx={{ height: '100%', overflowY: 'auto' }}>
@@ -89,16 +145,52 @@ export default function VaultAppsScreen() {
                         mb: 5,
                     }}
                 >
-                    {APPS.map((app) => (
-                        <AppConnectionCard
-                            key={app.name}
-                            iconLetter={app.iconLetter}
-                            iconBg={app.iconBg}
-                            name={app.name}
-                            description={app.description}
-                            status={app.status}
-                        />
-                    ))}
+                    {APPS.map((app) => {
+                        if (app.name !== "Gmail") {
+                            return (
+                                <AppConnectionCard
+                                    key={app.name}
+                                    iconLetter={app.iconLetter}
+                                    iconBg={app.iconBg}
+                                    name={app.name}
+                                    description={app.description}
+                                    status={app.status}
+                                />
+                            );
+                        }
+
+                        return (
+                            <Box key={app.name}>
+                                <AppConnectionCard
+                                    iconLetter={app.iconLetter}
+                                    iconBg={app.iconBg}
+                                    name={app.name}
+                                    description={`Metadata-only sync (subject/snippet/sender/date/labels). Indexed emails: ${gmailIndexedCount}. Last sync: ${gmailLastSynced}.`}
+                                    status={gmailCardStatus}
+                                    onAction={handleGmailSync}
+                                />
+                                <Box sx={{ mt: 1, display: "flex", alignItems: "center", gap: 1 }}>
+                                    <Button
+                                        size="small"
+                                        variant="outlined"
+                                        color="warning"
+                                        startIcon={<Icon>delete_sweep</Icon>}
+                                        onClick={handleGmailClear}
+                                    >
+                                        Clear Gmail Index
+                                    </Button>
+                                    <Typography sx={{ fontSize: "0.72rem", color: theme.palette.text.secondary }}>
+                                        Requires `OBI_GMAIL_ACCESS_TOKEN`.
+                                    </Typography>
+                                </Box>
+                                {(gmailActionError || gmailStatus?.lastError) && (
+                                    <Typography sx={{ mt: 0.75, fontSize: "0.72rem", color: theme.palette.error.main }}>
+                                        {gmailActionError ?? gmailStatus?.lastError}
+                                    </Typography>
+                                )}
+                            </Box>
+                        );
+                    })}
                 </Box>
 
                 {/* Privacy note */}

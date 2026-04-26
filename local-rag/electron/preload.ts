@@ -87,6 +87,12 @@ contextBridge.exposeInMainWorld("api", {
         stop: () => ipcRenderer.invoke("embedder:stop"),
         status: () => ipcRenderer.invoke("embedder:status"),
     },
+
+    gmail: {
+        status: () => ipcRenderer.invoke("gmail:status"),
+        syncMetadata: (limit?: number) => ipcRenderer.invoke("gmail:syncMetadata", limit),
+        clearIndex: () => ipcRenderer.invoke("gmail:clearIndex"),
+    },
 })
 
 contextBridge.exposeInMainWorld("watcher", {

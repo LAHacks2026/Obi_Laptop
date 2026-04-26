@@ -4,6 +4,7 @@ import { ImageEmbedder } from "./imageEmbedder.js";
 import { ImageCaptioner } from "./imageCaptioner.js";
 import { VectorStore } from "./vectorStore.js";
 import { FileWatcher } from "./fileWatcher.js";
+import { GmailIndexer } from "./gmailIndexer.js";
 
 export const llama = new LlamaSidecar();
 export const streamAborters = new Map<number, AbortController>();
@@ -21,3 +22,7 @@ export const vectorStore = new VectorStore(
 );
 
 export const fileWatcher = new FileWatcher(vectorStore);
+export const gmailIndexer = new GmailIndexer(
+    (texts) => embedder.embedMany(texts),
+    768
+);

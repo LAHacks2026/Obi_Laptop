@@ -6,6 +6,7 @@ import { registerVectorStoreIpc } from "./ipc/registerVectorStoreIpc.js";
 import { registerEmbedIpc } from "./ipc/registerEmbedIpc.js";
 import { registerFileWatcherIpc } from "./ipc/registerFileWatcherIpc.js";
 import { registerShellIpc } from "./ipc/registerShellIpc.js";
+import { registerGmailIpc } from "./ipc/registerGmailIpc.js";
 import { fileWatcher, llama, embedder } from "./services.js";
 import { createWindow } from "./app/createWindow.js";
 
@@ -26,6 +27,7 @@ app.whenReady().then(async () => {
         registerVectorStoreIpc();   // Called from frontend search()
         registerFileWatcherIpc();
         registerShellIpc();
+        registerGmailIpc();
 
         createWindow();
     } catch (error) {

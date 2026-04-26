@@ -69,6 +69,18 @@ declare global {
                     baseUrl: string
                 }>
             }
+
+            gmail: {
+                status: () => Promise<{
+                    connected: boolean
+                    syncing: boolean
+                    lastError: string | null
+                    indexedCount: number
+                    lastSyncedAtMs: number | null
+                }>
+                syncMetadata: (limit?: number) => Promise<{ synced: number; skipped: number }>
+                clearIndex: () => Promise<{ cleared: number }>
+            }
         }
 
         watcher: {

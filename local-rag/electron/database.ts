@@ -73,9 +73,33 @@ function createSchema(db: Database.Database) {
       height INTEGER
     );
 
+    CREATE TABLE IF NOT EXISTS gmail_messages (
+      id INTEGER PRIMARY KEY,
+      gmail_message_id TEXT NOT NULL UNIQUE,
+      thread_id TEXT NOT NULL,
+      path TEXT NOT NULL UNIQUE,
+      subject TEXT NOT NULL DEFAULT '',
+      snippet TEXT NOT NULL DEFAULT '',
+      sender TEXT NOT NULL DEFAULT '',
+      sent_at_ms INTEGER NOT NULL DEFAULT 0,
+      internal_date_ms INTEGER NOT NULL DEFAULT 0,
+      label_ids_json TEXT NOT NULL DEFAULT '[]',
+      indexed_at_ms INTEGER NOT NULL,
+      updated_at_ms INTEGER NOT NULL,
+      index_count INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS gmail_sync_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      last_synced_at_ms INTEGER NOT NULL DEFAULT 0,
+      last_history_id TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_documents_path ON documents(path);
     CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks(document_id);
     CREATE INDEX IF NOT EXISTS idx_image_documents_path ON image_documents(path);
+    CREATE INDEX IF NOT EXISTS idx_gmail_messages_path ON gmail_messages(path);
+    CREATE INDEX IF NOT EXISTS idx_gmail_messages_internal_date ON gmail_messages(internal_date_ms DESC);
 
     CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
       content,
@@ -102,6 +126,7 @@ function createSchema(db: Database.Database) {
     addColumnIfMissing(db, "chunks", "char_end", "INTEGER NOT NULL DEFAULT 0");
     addColumnIfMissing(db, "documents", "index_count", "INTEGER NOT NULL DEFAULT 1");
     addColumnIfMissing(db, "image_documents", "index_count", "INTEGER NOT NULL DEFAULT 1");
+    addColumnIfMissing(db, "gmail_messages", "index_count", "INTEGER NOT NULL DEFAULT 1");
 }
 
 function addColumnIfMissing(

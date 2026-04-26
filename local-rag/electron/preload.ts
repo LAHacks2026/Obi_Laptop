@@ -63,6 +63,10 @@ contextBridge.exposeInMainWorld("api", {
             ipcRenderer.invoke("rag:extractImageText", imagePath),
         detectImageObjects: (imagePath: string) =>
             ipcRenderer.invoke("rag:detectImageObjects", imagePath),
+        getImagePreviewDataUrl: (imagePath: string) =>
+            ipcRenderer.invoke("rag:getImagePreviewDataUrl", imagePath),
+        getSourcePreview: (filePath: string) =>
+            ipcRenderer.invoke("rag:getSourcePreview", filePath),
         stats: () =>
             ipcRenderer.invoke("rag:stats"),
     },

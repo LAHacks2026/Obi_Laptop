@@ -94,6 +94,12 @@ declare global {
                 answerImageQuestion: (imagePath: string, question: string) => Promise<string>
                 extractImageText: (imagePath: string) => Promise<string>
                 detectImageObjects: (imagePath: string) => Promise<string[]>
+                getImagePreviewDataUrl: (imagePath: string) => Promise<string | null>
+                getSourcePreview: (filePath: string) => Promise<{
+                    kind: "image" | "text" | "binary" | "unavailable"
+                    imageDataUrl: string | null
+                    text: string | null
+                }>
                 stats: () => Promise<{
                     scanned: number
                     indexed: number

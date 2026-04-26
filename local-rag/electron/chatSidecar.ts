@@ -32,7 +32,7 @@ export class LlamaSidecar {
 
     private chatModelPath() {
         const base = this.resourcesBase();
-        return path.join(base, "models", "Qwen3.5-2B-Q4_K_M.gguf");
+        return path.join(base, "models", "gemma-4-E2B-it-Q4_K_M.gguf");
     }
 
     private async getFreePort(): Promise<number> {
@@ -101,7 +101,7 @@ export class LlamaSidecar {
             this.status = "error";
             throw new Error(
                 `Chat model not found at: ${model}\n` +
-                `Place "Qwen3.5-2B-Q4_K_M.gguf" in the resources/models/ directory.`
+                `Place "gemma-4-E2B-it-Q4_K_M.gguf" in the resources/models/ directory.`
             );
         }
 

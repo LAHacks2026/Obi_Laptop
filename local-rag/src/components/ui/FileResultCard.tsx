@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Box, Button, Chip, Icon, Typography } from "@mui/material";
 import { useTheme, alpha } from "@mui/material/styles";
 import type { SearchResult } from "../../types/global";
@@ -41,6 +42,11 @@ function getFileIconColor(filename: string): string {
     return '#757575';
 }
 
+function isImageFile(filename: string): boolean {
+    const ext = getFileExt(filename);
+    return ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext);
+}
+
 function getRelevance(distance: number): { label: string; color: string } {
     if (distance < 0.35) return { label: 'High match', color: '#4CAF50' };
     if (distance < 0.6) return { label: 'Good match', color: '#FCA311' };
@@ -81,6 +87,40 @@ export default function FileResultCard({
     const shortPath = shortenPath(result.documentPath);
     const preview = result.content.slice(0, 200).trim();
     const isTopResult = rank === 1;
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
+    const [textPreview, setTextPreview] = useState<string | null>(null);
+    const shouldLoadImagePreview = compact && isImageFile(result.fileName);
+    const shouldLoadSourcePreview = compact;
+
+    useEffect(() => {
+        let disposed = false;
+        if (!shouldLoadSourcePreview) {
+            setImagePreview(null);
+            setTextPreview(null);
+            return;
+        }
+        (async () => {
+            try {
+                const sourcePreview = await window.api.rag.getSourcePreview(result.documentPath);
+                if (disposed) return;
+                if (sourcePreview.kind === "image") {
+                    setImagePreview(sourcePreview.imageDataUrl);
+                    setTextPreview(null);
+                    return;
+                }
+                setImagePreview(null);
+                setTextPreview(sourcePreview.text);
+            } catch {
+                if (!disposed) {
+                    setImagePreview(null);
+                    setTextPreview(null);
+                }
+            }
+        })();
+        return () => {
+            disposed = true;
+        };
+    }, [result.documentPath, shouldLoadSourcePreview]);
 
     if (compact) {
         // Panel compact view — Google-inspired row
@@ -163,6 +203,60 @@ export default function FileResultCard({
                         >
                             {preview}{preview.length < result.content.length ? '…' : ''}
                         </Typography>
+                        {shouldLoadImagePreview && imagePreview && (
+                            <Box
+                                sx={{
+                                    mt: 0.75,
+                                    width: "100%",
+                                    height: 84,
+                                    borderRadius: 1,
+                                    overflow: "hidden",
+                                    border: `1px solid ${theme.palette.outline.variant}`,
+                                    backgroundColor: theme.palette.surface.mid,
+                                }}
+                            >
+                                <Box
+                                    component="img"
+                                    src={imagePreview}
+                                    alt={result.fileName}
+                                    sx={{
+                                        width: "100%",
+                                        height: "100%",
+                                        objectFit: "cover",
+                                        display: "block",
+                                    }}
+                                />
+                            </Box>
+                        )}
+                        {compact && textPreview && (
+                            <Box
+                                sx={{
+                                    mt: 0.75,
+                                    p: 0.75,
+                                    borderRadius: 1,
+                                    border: `1px solid ${theme.palette.outline.variant}`,
+                                    backgroundColor: alpha(theme.palette.surface.high, 0.6),
+                                }}
+                            >
+                                <Typography
+                                    component="pre"
+                                    sx={{
+                                        m: 0,
+                                        whiteSpace: "pre-wrap",
+                                        fontFamily: `'Space Grotesk', sans-serif`,
+                                        fontSize: "0.66rem",
+                                        lineHeight: 1.45,
+                                        color: theme.palette.text.secondary,
+                                        display: "-webkit-box",
+                                        WebkitLineClamp: 5,
+                                        WebkitBoxOrient: "vertical",
+                                        overflow: "hidden",
+                                    }}
+                                >
+                                    {textPreview}
+                                </Typography>
+                            </Box>
+                        )}
                     </Box>
                 </Box>
             </Box>

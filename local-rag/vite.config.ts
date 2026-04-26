@@ -12,7 +12,14 @@ export default defineConfig({
         vite: {
           build: {
             rollupOptions: {
-              external: ["better-sqlite3", "sqlite-vec"],
+              external: [
+                "better-sqlite3",
+                "sqlite-vec",
+                "onnxruntime-node",
+                "onnxruntime-common",
+                "onnxruntime-web",
+                "@xenova/transformers",
+              ],
             },
           },
         },

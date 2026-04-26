@@ -14,8 +14,19 @@ declare global {
                         fileName: string
                         content: string
                         distance: number
+                        modality?: "text" | "image"
+                        sectionTitle?: string
                     }>
                 >
+                stats: () => Promise<{
+                    scanned: number
+                    indexed: number
+                    skipped: number
+                    textIndexed: number
+                    codeIndexed: number
+                    imageIndexed: number
+                    lastIndexedAtMs: number | null
+                }>
             }
 
             openIndexedPath: (
@@ -42,10 +53,64 @@ declare global {
         }
 
         watcher: {
-            start: (rootPath: string) => Promise<{ status: string; rootPath: string | null }>
-            stop: () => Promise<{ status: string; rootPath: string | null }>
-            status: () => Promise<{ status: string; rootPath: string | null }>
-            pickDirectory: () => Promise<{ canceled: boolean; path: string | null }>
+            start: (rootPath: string, options?: { includeCodeFiles?: boolean; indexAllFiles?: boolean }) => Promise<{
+                status: string
+                rootPath: string | null
+                indexingOptions: { includeCodeFiles: boolean; indexAllFiles: boolean }
+                indexingStats: {
+                    scanned: number
+                    indexed: number
+                    skipped: number
+                    textIndexed: number
+                    codeIndexed: number
+                    imageIndexed: number
+                    lastIndexedAtMs: number | null
+                }
+            }>
+            stop: () => Promise<{
+                status: string
+                rootPath: string | null
+                indexingOptions: { includeCodeFiles: boolean; indexAllFiles: boolean }
+                indexingStats: {
+                    scanned: number
+                    indexed: number
+                    skipped: number
+                    textIndexed: number
+                    codeIndexed: number
+                    imageIndexed: number
+                    lastIndexedAtMs: number | null
+                }
+            }>
+            status: () => Promise<{
+                status: string
+                rootPath: string | null
+                indexingOptions: { includeCodeFiles: boolean; indexAllFiles: boolean }
+                indexingStats: {
+                    scanned: number
+                    indexed: number
+                    skipped: number
+                    textIndexed: number
+                    codeIndexed: number
+                    imageIndexed: number
+                    lastIndexedAtMs: number | null
+                }
+            }>
+            pickDirectory: (options?: { includeCodeFiles?: boolean; indexAllFiles?: boolean }) => Promise<{
+                canceled: boolean
+                path: string | null
+                status: string
+                rootPath: string | null
+                indexingOptions: { includeCodeFiles: boolean; indexAllFiles: boolean }
+                indexingStats: {
+                    scanned: number
+                    indexed: number
+                    skipped: number
+                    textIndexed: number
+                    codeIndexed: number
+                    imageIndexed: number
+                    lastIndexedAtMs: number | null
+                }
+            }>
         }
     }
 }

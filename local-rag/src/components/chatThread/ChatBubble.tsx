@@ -1,5 +1,6 @@
 import { Box, Icon, Typography, useTheme } from "@mui/material";
 import { keyframes } from "@mui/system";
+import type { ReactNode } from "react";
 import type { Msg } from "../../types/global";
 
 const bounce = keyframes`
@@ -73,16 +74,14 @@ function ChatBubble({ message, isGenerating }: { message: Msg; isGenerating: boo
                 {isWaiting ? (
                     <TypingDots />
                 ) : (
-                    <Typography
-                        variant="body2"
+                    <Box
                         sx={{
-                            whiteSpace: "pre-wrap",
                             lineHeight: 1.6,
                             color: theme.palette.text.primary,
                         }}
                     >
-                        {message.content}
-                    </Typography>
+                        {renderMessageContent(message.content)}
+                    </Box>
                 )}
             </Box>
         </Box>
@@ -90,3 +89,71 @@ function ChatBubble({ message, isGenerating }: { message: Msg; isGenerating: boo
 }
 
 export default ChatBubble;
+
+function renderMessageContent(content: string): ReactNode {
+    const lines = content.split("\n");
+    return lines.map((rawLine, index) => {
+        const bulletMatch = rawLine.match(/^\s*[*-]\s+(.*)$/);
+        const line = bulletMatch ? bulletMatch[1] : rawLine;
+        const parts = renderInlineBold(line);
+
+        return (
+            <Box
+                key={`line-${index}`}
+                sx={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: bulletMatch ? 0.9 : 0,
+                    minHeight: "1.5em",
+                }}
+            >
+                {bulletMatch ? (
+                    <Typography
+                        component="span"
+                        variant="body2"
+                        sx={{
+                            color: "text.secondary",
+                            lineHeight: 1.6,
+                            width: "0.9em",
+                            flexShrink: 0,
+                            mt: 0.02,
+                        }}
+                    >
+                        •
+                    </Typography>
+                ) : null}
+                <Typography
+                    component="span"
+                    variant="body2"
+                    sx={{ whiteSpace: "pre-wrap", lineHeight: 1.6, flex: 1 }}
+                >
+                    {parts.length > 0 ? parts : "\u00A0"}
+                </Typography>
+            </Box>
+        );
+    });
+}
+
+function renderInlineBold(line: string): ReactNode[] {
+    const result: ReactNode[] = [];
+    const regex = /\*\*(.+?)\*\*/g;
+    let cursor = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(line)) !== null) {
+        if (match.index > cursor) {
+            result.push(line.slice(cursor, match.index));
+        }
+        result.push(
+            <Box component="strong" key={`bold-${match.index}`}>
+                {match[1]}
+            </Box>
+        );
+        cursor = regex.lastIndex;
+    }
+
+    if (cursor < line.length) {
+        result.push(line.slice(cursor));
+    }
+    return result;
+}

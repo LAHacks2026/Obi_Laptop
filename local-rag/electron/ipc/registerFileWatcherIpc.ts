@@ -5,7 +5,7 @@ import { IndexingOptions } from "../indexingRules.js";
 /* - FileWatcher IPC handler -----------------------
 */
 export function registerFileWatcherIpc() {
-    ipcMain.handle("watcher:start", async (_event, rootPath: string, options?: IndexingOptions) => {
+    ipcMain.handle("watcher:start", async (_event, rootPath: string | string[], options?: IndexingOptions) => {
         await fileWatcher.start(rootPath, options)
         return fileWatcher.getStatus()
     })
@@ -19,7 +19,7 @@ export function registerFileWatcherIpc() {
         return fileWatcher.getStatus()
     })
 
-    ipcMain.handle("watcher:pickDirectory", async (event, options?: IndexingOptions) => {
+    ipcMain.handle("watcher:pickDirectory", async (event, options?: IndexingOptions, addToExisting = false) => {
         const win = BrowserWindow.fromWebContents(event.sender)
         const result = await dialog.showOpenDialog(win!, {
             properties: ["openDirectory"],
@@ -31,7 +31,11 @@ export function registerFileWatcherIpc() {
         }
 
         const selectedPath = result.filePaths[0]
-        await fileWatcher.setPath(selectedPath, options)
+        if (addToExisting) {
+            await fileWatcher.addPath(selectedPath, options)
+        } else {
+            await fileWatcher.setPath(selectedPath, options)
+        }
         return { canceled: false, path: selectedPath, ...fileWatcher.getStatus() }
     })
 

@@ -18,6 +18,7 @@ declare global {
                         sectionTitle?: string
                     }>
                 >
+                deleteDocument: (filePath: string) => Promise<{ deleted: boolean }>
                 describeImage: (imagePath: string) => Promise<string>
                 answerImageQuestion: (imagePath: string, question: string) => Promise<string>
                 extractImageText: (imagePath: string) => Promise<string>
@@ -37,6 +38,14 @@ declare global {
                     imageIndexed: number
                     lastIndexedAtMs: number | null
                 }>
+                recentIndexedFiles: (limit?: number) => Promise<Array<{
+                    path: string
+                    fileName: string
+                    indexedAtMs: number
+                    updatedAtMs: number
+                    indexCount: number
+                    modality: "text" | "code" | "image"
+                }>>
             }
 
             openIndexedPath: (
@@ -63,9 +72,10 @@ declare global {
         }
 
         watcher: {
-            start: (rootPath: string, options?: { includeCodeFiles?: boolean; indexAllFiles?: boolean }) => Promise<{
+            start: (rootPath: string | string[], options?: { includeCodeFiles?: boolean; indexAllFiles?: boolean }) => Promise<{
                 status: string
                 rootPath: string | null
+                rootPaths: string[]
                 indexingOptions: { includeCodeFiles: boolean; indexAllFiles: boolean }
                 indexingStats: {
                     scanned: number
@@ -80,6 +90,7 @@ declare global {
             stop: () => Promise<{
                 status: string
                 rootPath: string | null
+                rootPaths: string[]
                 indexingOptions: { includeCodeFiles: boolean; indexAllFiles: boolean }
                 indexingStats: {
                     scanned: number
@@ -94,6 +105,7 @@ declare global {
             status: () => Promise<{
                 status: string
                 rootPath: string | null
+                rootPaths: string[]
                 indexingOptions: { includeCodeFiles: boolean; indexAllFiles: boolean }
                 indexingStats: {
                     scanned: number
@@ -105,11 +117,12 @@ declare global {
                     lastIndexedAtMs: number | null
                 }
             }>
-            pickDirectory: (options?: { includeCodeFiles?: boolean; indexAllFiles?: boolean }) => Promise<{
+            pickDirectory: (options?: { includeCodeFiles?: boolean; indexAllFiles?: boolean }, addToExisting?: boolean) => Promise<{
                 canceled: boolean
                 path: string | null
                 status: string
                 rootPath: string | null
+                rootPaths: string[]
                 indexingOptions: { includeCodeFiles: boolean; indexAllFiles: boolean }
                 indexingStats: {
                     scanned: number
@@ -124,6 +137,7 @@ declare global {
             clearIndex: () => Promise<{
                 status: string
                 rootPath: string | null
+                rootPaths: string[]
                 indexingOptions: { includeCodeFiles: boolean; indexAllFiles: boolean }
                 indexingStats: {
                     scanned: number
@@ -138,6 +152,7 @@ declare global {
             reindex: () => Promise<{
                 status: string
                 rootPath: string | null
+                rootPaths: string[]
                 indexingOptions: { includeCodeFiles: boolean; indexAllFiles: boolean }
                 indexingStats: {
                     scanned: number

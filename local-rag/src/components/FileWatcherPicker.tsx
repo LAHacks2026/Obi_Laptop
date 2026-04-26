@@ -4,7 +4,7 @@ import { useState } from "react";
 
 function FileWatcherPicker() {
     const theme = useTheme();
-    const [watchedPath, setWatchedPath] = useState<string | null>(null);
+    const [watchedPaths, setWatchedPaths] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
     const [maintenanceLoading, setMaintenanceLoading] = useState<null | "clear" | "reindex">(null);
     const [error, setError] = useState<string | null>(null);
@@ -18,13 +18,13 @@ function FileWatcherPicker() {
         lastIndexedAtMs: number | null;
     } | null>(null);
 
-    async function handlePick() {
+    async function handlePick(addToExisting = false) {
         setLoading(true);
         setError(null);
         try {
-            const result = await window.watcher.pickDirectory({ includeCodeFiles: false, indexAllFiles: false });
+            const result = await window.watcher.pickDirectory({ includeCodeFiles: false, indexAllFiles: false }, addToExisting);
             if (!result.canceled && result.path) {
-                setWatchedPath(result.path);
+                setWatchedPaths(result.rootPaths ?? (result.rootPath ? [result.rootPath] : []));
                 setStats(result.indexingStats);
                 setLoading(false);
             } else {
@@ -44,7 +44,7 @@ function FileWatcherPicker() {
             const result = await window.watcher.clearIndex();
             setStats(result.indexingStats);
             if (!result.rootPath) {
-                setWatchedPath(null);
+                setWatchedPaths([]);
             }
         } catch {
             setError("Failed to clear index.");
@@ -61,7 +61,7 @@ function FileWatcherPicker() {
             if (result.warning === "no_root_path") {
                 setError("Pick a folder first, then reindex.");
             }
-            setWatchedPath(result.rootPath);
+            setWatchedPaths(result.rootPaths ?? (result.rootPath ? [result.rootPath] : []));
             setStats(result.indexingStats);
         } catch {
             setError("Reindex failed. Check logs and try again.");
@@ -71,7 +71,7 @@ function FileWatcherPicker() {
     }
 
     const handleCancel = () => {
-        setWatchedPath(null);
+        setWatchedPaths([]);
         setLoading(false);
         setError(null);
     };
@@ -122,6 +122,15 @@ function FileWatcherPicker() {
             >
                 {loading ? "Indexing…" : "Choose folder"}
             </Button>
+            <Button
+                variant="outlined"
+                startIcon={<Icon>create_new_folder</Icon>}
+                onClick={() => handlePick(true)}
+                disabled={loading || maintenanceLoading !== null}
+                sx={{ mb: 1.25, ml: 1, fontSize: "0.8rem" }}
+            >
+                Add folder
+            </Button>
 
             <Box sx={{ display: "flex", gap: 1, mb: 1.25, flexWrap: "wrap" }}>
                 <Button
@@ -149,7 +158,7 @@ function FileWatcherPicker() {
                 Using default safe indexing rules (code files off, skip filtering on).
             </Typography>
 
-            {watchedPath && (
+            {watchedPaths.length > 0 && (
                 <Box
                     sx={{
                         mt: 1.5,
@@ -159,18 +168,31 @@ function FileWatcherPicker() {
                         border: `1px solid ${alpha(theme.palette.primary.main, 0.18)}`,
                     }}
                 >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: stats ? 0.75 : 0 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.75 }}>
                         <Icon sx={{ fontSize: 14, color: '#4CAF50', flexShrink: 0 }}>check_circle</Icon>
                         <Typography
                             sx={{
                                 fontSize: '0.78rem',
                                 color: theme.palette.text.primary,
                                 fontWeight: 600,
-                                wordBreak: 'break-all',
                             }}
                         >
-                            {watchedPath}
+                            Watching {watchedPaths.length} folder{watchedPaths.length !== 1 ? "s" : ""}
                         </Typography>
+                    </Box>
+                    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.35, mb: stats ? 0.75 : 0 }}>
+                        {watchedPaths.map((p) => (
+                            <Typography
+                                key={p}
+                                sx={{
+                                    fontSize: '0.72rem',
+                                    color: theme.palette.text.secondary,
+                                    wordBreak: 'break-all',
+                                }}
+                            >
+                                {p}
+                            </Typography>
+                        ))}
                     </Box>
                     {stats && (
                         <Typography sx={{ fontSize: '0.72rem', color: theme.palette.text.secondary, lineHeight: 1.6 }}>

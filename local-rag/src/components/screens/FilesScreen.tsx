@@ -18,6 +18,15 @@ type IndexStats = {
     lastIndexedAtMs: number | null;
 };
 
+type IndexedFileMeta = {
+    path: string;
+    fileName: string;
+    indexedAtMs: number;
+    updatedAtMs: number;
+    indexCount: number;
+    modality: "text" | "code" | "image";
+};
+
 type FilesScreenProps = {
     onNavigateToChat: (query?: string) => void;
 };
@@ -49,11 +58,14 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
     const [selectedFile, setSelectedFile] = useState<SearchResult | null>(null);
     const [showWatcher, setShowWatcher] = useState(false);
     const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+    const [recentIndexedFiles, setRecentIndexedFiles] = useState<IndexedFileMeta[]>([]);
 
     const loadStats = useCallback(async () => {
         try {
             const s = await window.api.rag.stats();
             setStats(s);
+            const recent = await window.api.rag.recentIndexedFiles(12);
+            setRecentIndexedFiles(recent);
         } catch {
             // ignore
         } finally {
@@ -92,6 +104,15 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
     const handleOpen = async (filePath: string) => {
         const res = await window.api.openIndexedPath(filePath);
         if (!res.ok) console.warn('[openIndexedPath]', filePath, (res as any).error);
+    };
+
+    const handleDeleteFromIndex = async (filePath: string) => {
+        try {
+            await window.api.rag.deleteDocument(filePath);
+            await loadStats();
+        } catch (error) {
+            console.warn("[deleteDocument]", filePath, error);
+        }
     };
 
     const hasIndex = stats && stats.indexed > 0;
@@ -143,32 +164,126 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
 
                 {/* Stats bar */}
                 {hasIndex && (
-                    <Box
-                        sx={{
-                            display: 'flex',
-                            gap: 3,
-                            p: 1.5,
-                            borderRadius: 1.5,
-                            backgroundColor: theme.palette.surface.mid,
-                            border: `1px solid ${theme.palette.outline.variant}`,
-                            mb: 2,
-                            flexWrap: 'wrap',
-                        }}
-                    >
-                        {[
-                            { label: 'Indexed', value: stats!.indexed, icon: 'check_circle', color: '#4CAF50' },
-                            { label: 'Text', value: stats!.textIndexed, icon: 'article', color: theme.palette.primary.main },
-                            { label: 'Code', value: stats!.codeIndexed, icon: 'code', color: '#3178C6' },
-                            { label: 'Images', value: stats!.imageIndexed, icon: 'image', color: '#9C27B0' },
-                            { label: 'Skipped (latest scan)', value: stats!.skipped, icon: 'skip_next', color: theme.palette.text.secondary as string },
-                        ].map(({ label, value, icon, color }) => (
-                            <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                                <Icon sx={{ fontSize: 15, color }}>{icon}</Icon>
-                                <Typography sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{value.toLocaleString()}</Typography>
-                                <Typography sx={{ fontSize: '0.72rem', color: theme.palette.text.secondary }}>{label}</Typography>
+                    <>
+                        <Box
+                            sx={{
+                                display: 'flex',
+                                gap: 3,
+                                p: 1.5,
+                                borderRadius: 1.5,
+                                backgroundColor: theme.palette.surface.mid,
+                                border: `1px solid ${theme.palette.outline.variant}`,
+                                mb: 1.25,
+                                flexWrap: 'wrap',
+                            }}
+                        >
+                            {[
+                                { label: 'Indexed', value: stats!.indexed, icon: 'check_circle', color: '#4CAF50' },
+                                { label: 'Text', value: stats!.textIndexed, icon: 'article', color: theme.palette.primary.main },
+                                { label: 'Code', value: stats!.codeIndexed, icon: 'code', color: '#3178C6' },
+                                { label: 'Images', value: stats!.imageIndexed, icon: 'image', color: '#9C27B0' },
+                                { label: 'Skipped (latest scan)', value: stats!.skipped, icon: 'skip_next', color: theme.palette.text.secondary as string },
+                            ].map(({ label, value, icon, color }) => (
+                                <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                                    <Icon sx={{ fontSize: 15, color }}>{icon}</Icon>
+                                    <Typography sx={{ fontSize: '0.78rem', fontWeight: 600 }}>{value.toLocaleString()}</Typography>
+                                    <Typography sx={{ fontSize: '0.72rem', color: theme.palette.text.secondary }}>{label}</Typography>
+                                </Box>
+                            ))}
+                        </Box>
+
+                        {!!recentIndexedFiles.length && (
+                            <Box
+                                sx={{
+                                    p: 1.25,
+                                    borderRadius: 1.5,
+                                    backgroundColor: theme.palette.surface.mid,
+                                    border: `1px solid ${theme.palette.outline.variant}`,
+                                    mb: 2,
+                                }}
+                            >
+                                <Typography
+                                    sx={{
+                                        fontSize: '0.68rem',
+                                        fontWeight: 700,
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.1em',
+                                        color: theme.palette.text.secondary,
+                                        mb: 1,
+                                    }}
+                                >
+                                    Recently Indexed Files
+                                </Typography>
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, maxHeight: 240, overflowY: 'auto', pr: 0.5 }}>
+                                    {recentIndexedFiles.map((file) => {
+                                        const indexedAt = file.indexedAtMs ? new Date(file.indexedAtMs).toLocaleString() : "Unknown";
+                                        const updatedAt = file.updatedAtMs ? new Date(file.updatedAtMs).toLocaleString() : "Unknown";
+                                        const indexedAgain = file.indexCount > 1;
+                                        return (
+                                            <Box
+                                                key={`${file.path}-${file.indexedAtMs}`}
+                                                sx={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    gap: 1,
+                                                    p: 1,
+                                                    borderRadius: 1,
+                                                    border: `1px solid ${theme.palette.outline.variant}`,
+                                                    backgroundColor: theme.palette.surface.low,
+                                                }}
+                                            >
+                                                <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                                                        <Chip
+                                                            size="small"
+                                                            label={file.modality.toUpperCase()}
+                                                            sx={{ height: 20, fontSize: '0.62rem', fontWeight: 700 }}
+                                                        />
+                                                        <Typography sx={{ fontSize: '0.78rem', fontWeight: 600 }} noWrap>
+                                                            {file.fileName}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Typography sx={{ fontSize: '0.68rem', color: theme.palette.text.secondary }} noWrap>
+                                                        {file.path}
+                                                    </Typography>
+                                                    <Typography sx={{ fontSize: '0.65rem', color: theme.palette.text.secondary }}>
+                                                        Indexed: {indexedAt} · Updated: {updatedAt} · Times indexed: {file.indexCount}
+                                                    </Typography>
+                                                    {indexedAgain && (
+                                                        <Typography sx={{ fontSize: '0.64rem', color: theme.palette.warning.main, fontWeight: 600 }}>
+                                                            Re-indexed file detected
+                                                        </Typography>
+                                                    )}
+                                                </Box>
+                                                <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                                                    <Button
+                                                        size="small"
+                                                        variant="outlined"
+                                                        startIcon={<Icon sx={{ fontSize: 15 }}>open_in_new</Icon>}
+                                                        onClick={() => handleOpen(file.path)}
+                                                        sx={{ fontSize: '0.7rem', whiteSpace: 'nowrap' }}
+                                                    >
+                                                        Open
+                                                    </Button>
+                                                    <Button
+                                                        size="small"
+                                                        color="error"
+                                                        variant="outlined"
+                                                        startIcon={<Icon sx={{ fontSize: 15 }}>delete</Icon>}
+                                                        onClick={() => handleDeleteFromIndex(file.path)}
+                                                        sx={{ fontSize: '0.7rem', whiteSpace: 'nowrap' }}
+                                                    >
+                                                        Unindex
+                                                    </Button>
+                                                </Box>
+                                            </Box>
+                                        );
+                                    })}
+                                </Box>
                             </Box>
-                        ))}
-                    </Box>
+                        )}
+                    </>
                 )}
 
                 {/* Watcher section */}

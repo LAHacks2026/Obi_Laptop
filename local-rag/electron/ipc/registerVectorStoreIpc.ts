@@ -14,6 +14,10 @@ export function registerVectorStoreIpc() {
         return vectorStore.indexFile(filePath)
     })
 
+    ipcMain.handle("rag:deleteDocument", async (_event, filePath: string) => {
+        return vectorStore.deleteDocument(filePath)
+    })
+
     ipcMain.handle("rag:search", async (_event, query: string, limit = 5) => {
         return vectorStore.search(query, limit)
     })
@@ -103,6 +107,10 @@ export function registerVectorStoreIpc() {
 
     ipcMain.handle("rag:stats", async () => {
         return vectorStore.getStats()
+    })
+
+    ipcMain.handle("rag:recentIndexedFiles", async (_event, limit = 12) => {
+        return vectorStore.getRecentIndexedFiles(limit)
     })
 
     ipcMain.handle("rag:imageEmbeddingStatus", async () => {

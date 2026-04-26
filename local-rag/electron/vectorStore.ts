@@ -152,13 +152,13 @@ export class VectorStore {
 
                 db.prepare(`
           UPDATE documents
-          SET file_name = ?, updated_at_ms = ?, indexed_at_ms = ?
+          SET file_name = ?, updated_at_ms = ?, indexed_at_ms = ?, index_count = COALESCE(index_count, 1) + 1
           WHERE id = ?
         `).run(path.basename(filePath), updatedAtMs, Date.now(), documentId)
             } else {
                 const result = db.prepare(`
-          INSERT INTO documents (path, file_name, updated_at_ms, indexed_at_ms)
-          VALUES (?, ?, ?, ?)
+          INSERT INTO documents (path, file_name, updated_at_ms, indexed_at_ms, index_count)
+          VALUES (?, ?, ?, ?, 1)
         `).run(filePath, path.basename(filePath), updatedAtMs, Date.now())
 
                 documentId = Number(result.lastInsertRowid)
@@ -246,13 +246,13 @@ export class VectorStore {
                 db.prepare("DELETE FROM image_embeddings_clip WHERE image_id = ?").run(imageId)
                 db.prepare(`
                     UPDATE image_documents
-                    SET file_name = ?, updated_at_ms = ?, indexed_at_ms = ?
+                    SET file_name = ?, updated_at_ms = ?, indexed_at_ms = ?, index_count = COALESCE(index_count, 1) + 1
                     WHERE id = ?
                 `).run(path.basename(filePath), updatedAtMs, Date.now(), imageId)
             } else {
                 const insertResult = db.prepare(`
-                    INSERT INTO image_documents (path, file_name, updated_at_ms, indexed_at_ms, width, height)
-                    VALUES (?, ?, ?, ?, NULL, NULL)
+                    INSERT INTO image_documents (path, file_name, updated_at_ms, indexed_at_ms, width, height, index_count)
+                    VALUES (?, ?, ?, ?, NULL, NULL, 1)
                 `).run(filePath, path.basename(filePath), updatedAtMs, Date.now())
                 imageId = Number(insertResult.lastInsertRowid)
             }
@@ -505,6 +505,80 @@ export class VectorStore {
             codeIndexed,
             imageIndexed,
         }
+    }
+
+    getRecentIndexedFiles(limit = 12) {
+        const db = getDb()
+        const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)))
+        const rows = db.prepare(`
+            SELECT
+                path,
+                file_name,
+                indexed_at_ms,
+                updated_at_ms,
+                modality
+            FROM (
+                SELECT
+                    d.path AS path,
+                    d.file_name AS file_name,
+                    d.indexed_at_ms AS indexed_at_ms,
+                    d.updated_at_ms AS updated_at_ms,
+                    COALESCE(d.index_count, 1) AS index_count,
+                    CASE
+                        WHEN lower(d.path) GLOB '*.ts'
+                          OR lower(d.path) GLOB '*.tsx'
+                          OR lower(d.path) GLOB '*.js'
+                          OR lower(d.path) GLOB '*.jsx'
+                          OR lower(d.path) GLOB '*.py'
+                          OR lower(d.path) GLOB '*.java'
+                          OR lower(d.path) GLOB '*.go'
+                          OR lower(d.path) GLOB '*.rs'
+                          OR lower(d.path) GLOB '*.c'
+                          OR lower(d.path) GLOB '*.cpp'
+                          OR lower(d.path) GLOB '*.h'
+                          OR lower(d.path) GLOB '*.hpp'
+                          OR lower(d.path) GLOB '*.css'
+                          OR lower(d.path) GLOB '*.scss'
+                          OR lower(d.path) GLOB '*.html'
+                          OR lower(d.path) GLOB '*.xml'
+                          OR lower(d.path) GLOB '*.json'
+                          OR lower(d.path) GLOB '*.yaml'
+                          OR lower(d.path) GLOB '*.yml'
+                          OR lower(d.path) GLOB '*.toml'
+                          OR lower(d.path) GLOB '*.sql'
+                        THEN 'code'
+                        ELSE 'text'
+                    END AS modality
+                FROM documents d
+                UNION ALL
+                SELECT
+                    i.path AS path,
+                    i.file_name AS file_name,
+                    i.indexed_at_ms AS indexed_at_ms,
+                    i.updated_at_ms AS updated_at_ms,
+                    COALESCE(i.index_count, 1) AS index_count,
+                    'image' AS modality
+                FROM image_documents i
+            )
+            ORDER BY indexed_at_ms DESC
+            LIMIT ?
+        `).all(safeLimit) as Array<{
+            path: string
+            file_name: string
+            indexed_at_ms: number
+            updated_at_ms: number
+            index_count: number
+            modality: "text" | "code" | "image"
+        }>
+
+        return rows.map((row) => ({
+            path: row.path,
+            fileName: row.file_name,
+            indexedAtMs: Number(row.indexed_at_ms ?? 0),
+            updatedAtMs: Number(row.updated_at_ms ?? 0),
+            indexCount: Number(row.index_count ?? 1),
+            modality: row.modality,
+        }))
     }
 
     private recordIndexed(modality: IndexedModality) {

@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld("api", {
 
         indexFile: (filePath: string) =>
             ipcRenderer.invoke("rag:indexFile", filePath),
+        deleteDocument: (filePath: string) =>
+            ipcRenderer.invoke("rag:deleteDocument", filePath),
 
         search: (query: string, limit?: number) =>
             ipcRenderer.invoke("rag:search", query, limit),
@@ -69,6 +71,8 @@ contextBridge.exposeInMainWorld("api", {
             ipcRenderer.invoke("rag:getSourcePreview", filePath),
         stats: () =>
             ipcRenderer.invoke("rag:stats"),
+        recentIndexedFiles: (limit?: number) =>
+            ipcRenderer.invoke("rag:recentIndexedFiles", limit),
         imageEmbeddingStatus: () =>
             ipcRenderer.invoke("rag:imageEmbeddingStatus"),
     },
@@ -86,10 +90,10 @@ contextBridge.exposeInMainWorld("api", {
 })
 
 contextBridge.exposeInMainWorld("watcher", {
-    start: (rootPath: string, options?: { includeCodeFiles?: boolean; indexAllFiles?: boolean }) => ipcRenderer.invoke("watcher:start", rootPath, options),
+    start: (rootPath: string | string[], options?: { includeCodeFiles?: boolean; indexAllFiles?: boolean }) => ipcRenderer.invoke("watcher:start", rootPath, options),
     stop: () => ipcRenderer.invoke("watcher:stop"),
     status: () => ipcRenderer.invoke("watcher:status"),
-    pickDirectory: (options?: { includeCodeFiles?: boolean; indexAllFiles?: boolean }) => ipcRenderer.invoke("watcher:pickDirectory", options),
+    pickDirectory: (options?: { includeCodeFiles?: boolean; indexAllFiles?: boolean }, addToExisting?: boolean) => ipcRenderer.invoke("watcher:pickDirectory", options, addToExisting),
     clearIndex: () => ipcRenderer.invoke("watcher:clearIndex"),
     reindex: () => ipcRenderer.invoke("watcher:reindex"),
 })

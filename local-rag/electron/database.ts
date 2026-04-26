@@ -100,6 +100,8 @@ function createSchema(db: Database.Database) {
     addColumnIfMissing(db, "chunks", "section_title", "TEXT DEFAULT ''");
     addColumnIfMissing(db, "chunks", "char_start", "INTEGER NOT NULL DEFAULT 0");
     addColumnIfMissing(db, "chunks", "char_end", "INTEGER NOT NULL DEFAULT 0");
+    addColumnIfMissing(db, "documents", "index_count", "INTEGER NOT NULL DEFAULT 1");
+    addColumnIfMissing(db, "image_documents", "index_count", "INTEGER NOT NULL DEFAULT 1");
 }
 
 function addColumnIfMissing(

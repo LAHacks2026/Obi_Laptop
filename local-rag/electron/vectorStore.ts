@@ -512,6 +512,136 @@ export class VectorStore {
         // Totals are derived from the DB in getStats() to avoid drift.
         void modality
     }
+
+    /**
+     * List every indexed item across the text/code (`documents`) and
+     * image (`image_documents`) tables. Used by the Files screen's Browse
+     * mode to show *which* files are in the index, not just aggregate
+     * counts.
+     *
+     * Filtering and sorting happen in JS rather than SQL so we don't have
+     * to maintain parallel WHERE clauses across two UNION'd tables. Fine
+     * at the current scale (low thousands); revisit if connectors push
+     * row counts into the hundreds of thousands.
+     */
+    listIndexed(opts: ListIndexedOptions = {}): ListIndexedResult {
+        const db = getDb()
+
+        const docRows = db
+            .prepare(
+                `SELECT id, path, file_name, indexed_at_ms, updated_at_ms
+                 FROM documents`
+            )
+            .all() as Array<{
+                id: number
+                path: string
+                file_name: string
+                indexed_at_ms: number
+                updated_at_ms: number
+            }>
+
+        const imageRows = db
+            .prepare(
+                `SELECT id, path, file_name, indexed_at_ms, updated_at_ms
+                 FROM image_documents`
+            )
+            .all() as Array<{
+                id: number
+                path: string
+                file_name: string
+                indexed_at_ms: number
+                updated_at_ms: number
+            }>
+
+        const items: IndexedItem[] = [
+            ...docRows.map((row) => {
+                const m = inferModality(row.path)
+                return {
+                    id: row.id,
+                    path: row.path,
+                    fileName: row.file_name,
+                    modality: (m === "code" ? "code" : "text") as IndexedModality,
+                    source: pathToSource(row.path),
+                    indexedAtMs: row.indexed_at_ms,
+                    updatedAtMs: row.updated_at_ms,
+                }
+            }),
+            ...imageRows.map((row) => ({
+                id: row.id,
+                path: row.path,
+                fileName: row.file_name,
+                modality: "image" as IndexedModality,
+                source: pathToSource(row.path),
+                indexedAtMs: row.indexed_at_ms,
+                updatedAtMs: row.updated_at_ms,
+            })),
+        ]
+
+        const search = opts.search?.trim().toLowerCase() ?? ""
+        const filtered = items.filter((item) => {
+            if (opts.modality && item.modality !== opts.modality) return false
+            if (opts.source && opts.source !== "all" && item.source !== opts.source) {
+                return false
+            }
+            if (search) {
+                const path = item.path.toLowerCase()
+                const name = item.fileName.toLowerCase()
+                return path.includes(search) || name.includes(search)
+            }
+            return true
+        })
+
+        const sort = opts.sort ?? "recent"
+        filtered.sort((a, b) => {
+            if (sort === "name") return a.fileName.localeCompare(b.fileName)
+            if (sort === "path") return a.path.localeCompare(b.path)
+            return b.indexedAtMs - a.indexedAtMs
+        })
+
+        const total = filtered.length
+        const offset = Math.max(0, opts.offset ?? 0)
+        const limit = Math.max(1, Math.min(500, opts.limit ?? 100))
+        const page = filtered.slice(offset, offset + limit)
+
+        return { items: page, total, offset, limit }
+    }
+}
+
+export type IndexedItem = {
+    id: number
+    path: string
+    fileName: string
+    modality: IndexedModality
+    source: string
+    indexedAtMs: number
+    updatedAtMs: number
+}
+
+export type ListIndexedOptions = {
+    modality?: IndexedModality
+    /** "all" or a specific source like "local" / "github". Omitted = all. */
+    source?: string
+    search?: string
+    sort?: "recent" | "name" | "path"
+    limit?: number
+    offset?: number
+}
+
+export type ListIndexedResult = {
+    items: IndexedItem[]
+    total: number
+    offset: number
+    limit: number
+}
+
+/**
+ * Derive the logical source of an indexed row from its path. Local file
+ * paths are absolute; remote connectors use `<scheme>://...` URIs.
+ */
+function pathToSource(p: string): string {
+    const m = /^([a-z][a-z0-9+\-.]*):\/\//i.exec(p)
+    if (m) return m[1].toLowerCase()
+    return "local"
 }
 
 

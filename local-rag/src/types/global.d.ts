@@ -118,6 +118,33 @@ declare global {
                     sampleImage: { path: string; file_name: string } | null
                     isWorking: boolean
                 }>
+                listIndexed: (opts?: {
+                    modality?: "text" | "code" | "image"
+                    source?: string
+                    search?: string
+                    sort?: "recent" | "name" | "path"
+                    limit?: number
+                    offset?: number
+                }) => Promise<{
+                    items: Array<{
+                        id: number
+                        path: string
+                        fileName: string
+                        modality: "text" | "code" | "image"
+                        source: string
+                        indexedAtMs: number
+                        updatedAtMs: number
+                    }>
+                    total: number
+                    offset: number
+                    limit: number
+                }>
+                removeIndexed: (
+                    filePath: string
+                ) => Promise<
+                    | { ok: true; deleted: boolean }
+                    | { ok: false; error: string }
+                >
             }
 
             openIndexedPath: (

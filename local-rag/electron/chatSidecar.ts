@@ -32,7 +32,7 @@ export class LlamaSidecar {
 
     private chatModelPath() {
         const base = this.resourcesBase();
-        return path.join(base, "models", "gemma-4-E2B-it-Q4_K_M.gguf");
+        return path.join(base, "models", "gemma-4-E2B-it-Q3_K_M.gguf");
     }
 
     private async getFreePort(): Promise<number> {

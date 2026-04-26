@@ -108,4 +108,47 @@ export function registerVectorStoreIpc() {
     ipcMain.handle("rag:imageEmbeddingStatus", async () => {
         return vectorStore.getImageEmbeddingStatus()
     })
+
+    /**
+     * List every indexed document/image. Drives the Files screen's
+     * Browse mode. Accepts modality / source / search filters, sort, and
+     * pagination.
+     */
+    ipcMain.handle(
+        "rag:listIndexed",
+        async (
+            _event,
+            opts?: {
+                modality?: "text" | "code" | "image"
+                source?: string
+                search?: string
+                sort?: "recent" | "name" | "path"
+                limit?: number
+                offset?: number
+            }
+        ) => {
+            return vectorStore.listIndexed(opts ?? {})
+        }
+    )
+
+    /**
+     * Remove a single indexed document or image (and its chunks /
+     * embeddings) by path. Used by the per-row "Remove" action in the
+     * Browse list. Different from `watcher:clearIndex` which nukes
+     * everything.
+     */
+    ipcMain.handle("rag:removeIndexed", async (_event, filePath: unknown) => {
+        if (typeof filePath !== "string" || !filePath.trim()) {
+            return { ok: false as const, error: "invalid_path" }
+        }
+        try {
+            const result = await vectorStore.deleteDocument(filePath)
+            return { ok: true as const, deleted: result.deleted }
+        } catch (err) {
+            return {
+                ok: false as const,
+                error: err instanceof Error ? err.message : String(err),
+            }
+        }
+    })
 }

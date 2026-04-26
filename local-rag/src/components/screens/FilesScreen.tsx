@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Box, Button, Chip, CircularProgress, Divider, Icon, Typography } from "@mui/material";
+import { Box, Button, Chip, CircularProgress, Divider, Icon, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { useTheme, alpha } from "@mui/material/styles";
 import type { SearchResult } from "../../types/global";
 import SearchBar from "../ui/SearchBar";
 import FileResultCard from "../ui/FileResultCard";
 import FilePreviewPanel from "../ui/FilePreviewPanel";
 import EmptyState from "../ui/EmptyState";
+import IndexedFilesBrowser from "../ui/IndexedFilesBrowser";
 import FileWatcherPicker from "../FileWatcherPicker";
 
 type IndexStats = {
@@ -49,6 +50,14 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
     const [selectedFile, setSelectedFile] = useState<SearchResult | null>(null);
     const [showWatcher, setShowWatcher] = useState(false);
     const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+    /**
+     * Mode toggle for the screen. "search" preserves the original
+     * keyword-search experience; "browse" exposes the on-demand list of
+     * every indexed item (text, code, image, and future remote sources).
+     * Defaulting to "search" keeps the chat-style entry point that users
+     * already know; Browse is opt-in via the toggle near the SearchBar.
+     */
+    const [mode, setMode] = useState<'search' | 'browse'>('search');
 
     const loadStats = useCallback(async () => {
         try {
@@ -198,15 +207,50 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
                     </Box>
                 )}
 
-                <SearchBar
-                    value={query}
-                    onChange={setQuery}
-                    onSearch={handleSearch}
-                    placeholder="Search your indexed files…"
-                />
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <ToggleButtonGroup
+                        size="small"
+                        value={mode}
+                        exclusive
+                        onChange={(_e, v) => {
+                            if (v === 'search' || v === 'browse') setMode(v);
+                        }}
+                        sx={{
+                            '& .MuiToggleButton-root': {
+                                fontSize: '0.72rem',
+                                py: 0.5,
+                                px: 1.25,
+                                textTransform: 'none',
+                            },
+                        }}
+                    >
+                        <ToggleButton value="search">
+                            <Icon sx={{ fontSize: 16, mr: 0.5 }}>search</Icon>
+                            Search
+                        </ToggleButton>
+                        <ToggleButton value="browse">
+                            <Icon sx={{ fontSize: 16, mr: 0.5 }}>list</Icon>
+                            Browse
+                        </ToggleButton>
+                    </ToggleButtonGroup>
+                    {mode === 'search' ? (
+                        <Box sx={{ flex: 1 }}>
+                            <SearchBar
+                                value={query}
+                                onChange={setQuery}
+                                onSearch={handleSearch}
+                                placeholder="Search your indexed files…"
+                            />
+                        </Box>
+                    ) : (
+                        <Typography sx={{ fontSize: '0.78rem', color: theme.palette.text.secondary }}>
+                            Browse every file in your index. Use filters and sort to drill down.
+                        </Typography>
+                    )}
+                </Box>
 
                 {/* File type filters */}
-                {results.length > 0 && (
+                {mode === 'search' && results.length > 0 && (
                     <Box sx={{ display: 'flex', gap: 0.75, mt: 1.5, flexWrap: 'wrap' }}>
                         {FILE_FILTERS.map((f) => {
                             const isActive = activeFilter === f.key;
@@ -265,11 +309,17 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
                     sx={{
                         flex: 1,
                         minWidth: 0,
-                        overflowY: 'auto',
+                        overflowY: mode === 'browse' ? 'hidden' : 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
                         p: 3,
                     }}
                 >
-                    {searching && (
+                    {mode === 'browse' && (
+                        <IndexedFilesBrowser />
+                    )}
+
+                    {mode === 'search' && searching && (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 4, justifyContent: 'center' }}>
                             <CircularProgress size={20} />
                             <Typography sx={{ color: theme.palette.text.secondary, fontSize: '0.875rem' }}>
@@ -278,7 +328,7 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
                         </Box>
                     )}
 
-                    {!searching && query && results.length === 0 && (
+                    {mode === 'search' && !searching && query && results.length === 0 && (
                         <EmptyState
                             icon="search_off"
                             title="No results found"
@@ -287,7 +337,7 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
                         />
                     )}
 
-                    {!searching && query && results.length > 0 && filteredResults.length === 0 && (
+                    {mode === 'search' && !searching && query && results.length > 0 && filteredResults.length === 0 && (
                         <EmptyState
                             icon="filter_list_off"
                             title="No results for this filter"
@@ -296,7 +346,7 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
                         />
                     )}
 
-                    {!searching && !query && !hasIndex && statsLoaded && (
+                    {mode === 'search' && !searching && !query && !hasIndex && statsLoaded && (
                         <EmptyState
                             icon="folder_open"
                             title="No files indexed yet"
@@ -305,15 +355,16 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
                         />
                     )}
 
-                    {!searching && !query && hasIndex && (
+                    {mode === 'search' && !searching && !query && hasIndex && (
                         <EmptyState
                             icon="search"
                             title="Search your vault"
-                            description={`${stats!.indexed.toLocaleString()} files are ready to search. Type a query above.`}
+                            description={`${stats!.indexed.toLocaleString()} files are ready to search. Type a query above. Or switch to Browse to see every indexed file.`}
+                            action={{ label: 'Browse all indexed', onClick: () => setMode('browse'), icon: 'list' }}
                         />
                     )}
 
-                    {!searching && filteredResults.length > 0 && (
+                    {mode === 'search' && !searching && filteredResults.length > 0 && (
                         <Box>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
                                 <Typography sx={{ fontSize: '0.78rem', color: theme.palette.text.secondary }}>
@@ -344,7 +395,7 @@ export default function FilesScreen({ onNavigateToChat }: FilesScreenProps) {
                 </Box>
 
                 {/* File preview panel */}
-                {selectedFile && (
+                {mode === 'search' && selectedFile && (
                     <Box
                         sx={{
                             width: 400,

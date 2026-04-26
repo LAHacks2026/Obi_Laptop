@@ -26,7 +26,19 @@ export default function FilePreviewPanel({ result, onBack, onAskObi }: FilePrevi
 
     const handleOpen = async () => {
         const res = await window.api.openIndexedPath(result.documentPath);
-        if (!res.ok) console.warn('[openIndexedPath]', result.documentPath, (res as any).error);
+        if (!res.ok) {
+            const err = (res as { error: string }).error;
+            console.warn('[openIndexedPath]', result.documentPath, err);
+            const friendly =
+                err === "not_found"
+                    ? "This file no longer exists at the indexed path. It may have been moved or deleted."
+                    : err === "not_indexed"
+                        ? "This file is not in the index anymore. Re-index its folder and try again."
+                        : err === "not_a_file"
+                            ? "That path is not a regular file."
+                            : `Could not open file: ${err}`;
+            window.alert(friendly);
+        }
     };
 
     return (

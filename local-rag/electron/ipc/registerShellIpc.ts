@@ -6,9 +6,17 @@ import { getDb } from "../database.js"
 const MAX_PATH_LEN = 4096
 
 function isIndexedDocumentPath(p: string): boolean {
+    // Image rows live in image_documents, text/code rows in documents.
+    // Without this UNION, clicking "Open File" on any image preview silently
+    // returned `not_indexed` because only `documents` was checked.
     const row = getDb()
-        .prepare("SELECT 1 AS ok FROM documents WHERE path = ? LIMIT 1")
-        .get(p) as { ok: number } | undefined
+        .prepare(
+            `SELECT 1 AS ok FROM documents WHERE path = ?
+             UNION ALL
+             SELECT 1 AS ok FROM image_documents WHERE path =  ?
+             LIMIT 1`
+        )
+        .get(p, p) as { ok: number } | undefined
     return Boolean(row)
 }
 

@@ -71,6 +71,16 @@ contextBridge.exposeInMainWorld("api", {
             ipcRenderer.invoke("rag:stats"),
         imageEmbeddingStatus: () =>
             ipcRenderer.invoke("rag:imageEmbeddingStatus"),
+        listIndexed: (opts?: {
+            modality?: "text" | "code" | "image";
+            source?: string;
+            search?: string;
+            sort?: "recent" | "name" | "path";
+            limit?: number;
+            offset?: number;
+        }) => ipcRenderer.invoke("rag:listIndexed", opts),
+        removeIndexed: (filePath: string) =>
+            ipcRenderer.invoke("rag:removeIndexed", filePath),
     },
 
     openIndexedPath: (filePath: string) =>

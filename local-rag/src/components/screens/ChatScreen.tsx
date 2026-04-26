@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Box } from "@mui/material";
+import { Box, Button, Icon } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import type { Msg, SearchResult } from "../../types/global";
 import ChatTheadContent from "../chatThread/ChatTheadContent";
@@ -17,6 +17,8 @@ type ChatScreenProps = {
     lastError: string | null;
     lastRetrieved: SearchResult[];
     onNavigateToChat: (query?: string) => void;
+    focusMode?: boolean;
+    onToggleFocusMode?: () => void;
 };
 
 export default function ChatScreen({
@@ -30,6 +32,8 @@ export default function ChatScreen({
     lastError,
     lastRetrieved,
     onNavigateToChat,
+    focusMode = false,
+    onToggleFocusMode,
 }: ChatScreenProps) {
     const theme = useTheme();
     const [selectedFile, setSelectedFile] = useState<SearchResult | null>(null);
@@ -59,6 +63,7 @@ export default function ChatScreen({
                 flex: 1,
                 minHeight: 0,
                 overflow: 'hidden',
+                position: 'relative',
             }}
         >
             {/* Main content */}
@@ -94,7 +99,7 @@ export default function ChatScreen({
                 </Box>
 
                 {/* File panel */}
-                {showPanel && (
+                {showPanel && !focusMode && (
                     <Box
                         sx={{
                             width: 360,
@@ -123,6 +128,34 @@ export default function ChatScreen({
                     </Box>
                 )}
             </Box>
+            {focusMode && onToggleFocusMode && (
+                <Button
+                    onClick={onToggleFocusMode}
+                    size="small"
+                    startIcon={<Icon sx={{ fontSize: 16 }}>fullscreen_exit</Icon>}
+                    sx={{
+                        position: 'absolute',
+                        top: 10,
+                        right: 12,
+                        zIndex: 3,
+                        textTransform: 'none',
+                        fontSize: '0.72rem',
+                        px: 1.1,
+                        py: 0.45,
+                        minWidth: 0,
+                        borderRadius: 1.5,
+                        color: theme.palette.text.secondary,
+                        backgroundColor: theme.palette.background.paper,
+                        border: `1px solid ${theme.palette.outline.variant}`,
+                        '&:hover': {
+                            backgroundColor: theme.palette.action.hover,
+                            color: theme.palette.text.primary,
+                        },
+                    }}
+                >
+                    Exit focus
+                </Button>
+            )}
         </Box>
     );
 }

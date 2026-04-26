@@ -4,6 +4,7 @@ import { Box } from '@mui/material';
 type AppShellProps = {
     sideBar: ReactNode;
     mainCanvas: ReactNode;
+    hideSidebar?: boolean;
 };
 
 const SIDEBAR_WIDTH = 256;
@@ -11,6 +12,7 @@ const SIDEBAR_WIDTH = 256;
 export default function AppShell({
     sideBar,
     mainCanvas,
+    hideSidebar = false,
 }: AppShellProps) {
     return (
         <Box
@@ -21,31 +23,32 @@ export default function AppShell({
                 color: theme.palette.text.primary,
             })}
         >
-            {/* Fixed sidebar */}
-            <Box
-                component="aside"
-                sx={(theme) => ({
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    width: SIDEBAR_WIDTH,
-                    height: '100vh',
-                    zIndex: 50,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    py: 2,
-                    backgroundColor: theme.palette.surface.base,
-                    borderRight: `1px solid ${theme.palette.outline.variant}`,
-                })}
-            >
-                {sideBar}
-            </Box>
+            {!hideSidebar && (
+                <Box
+                    component="aside"
+                    sx={(theme) => ({
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        width: SIDEBAR_WIDTH,
+                        height: '100vh',
+                        zIndex: 50,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        py: 2,
+                        backgroundColor: theme.palette.surface.base,
+                        borderRight: `1px solid ${theme.palette.outline.variant}`,
+                    })}
+                >
+                    {sideBar}
+                </Box>
+            )}
 
             {/* Main canvas */}
             <Box
                 component="main"
                 sx={(theme) => ({
-                    ml: `${SIDEBAR_WIDTH}px`,
+                    ml: hideSidebar ? 0 : `${SIDEBAR_WIDTH}px`,
                     height: '100vh',
                     display: 'flex',
                     flexDirection: 'column',

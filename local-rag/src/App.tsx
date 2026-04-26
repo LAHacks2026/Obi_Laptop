@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Box } from "@mui/material";
+import { Box, Button, Icon } from "@mui/material";
 import type { SearchResult, Msg, LlamaStatus } from "./types/global";
 import AppShell from "./components/layout/AppShell";
 import SidebarNav, { type NavKey } from "./components/layout/SidebarNav";
@@ -42,6 +42,7 @@ const MAX_VISUAL_QA_CONTEXT_CHARS = 1200;
 const MAX_AUGMENTED_USER_CHARS = 6000;
 const MAX_HISTORY_MESSAGES = 6; // excludes the leading system prompt
 const CHAT_HISTORY_STORAGE_KEY = "obi-chat-history-v1";
+const CHAT_FOCUS_MODE_STORAGE_KEY = "obi-chat-focus-mode-v1";
 const MAX_STORED_CHAT_SESSIONS = 30;
 const DEFAULT_SYSTEM_PROMPT =
     "You are a helpful assistant for local RAG. " +
@@ -64,6 +65,13 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
     * Layout States
     ********************************************/
     const [sideNavActiveItem, setSideNavActiveItem] = useState<NavKey>('home');
+    const [focusMode, setFocusMode] = useState<boolean>(() => {
+        try {
+            return localStorage.getItem(CHAT_FOCUS_MODE_STORAGE_KEY) === "1";
+        } catch {
+            return false;
+        }
+    });
 
     /********************************************
     * States
@@ -159,6 +167,33 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
             clearInterval(interval);
         };
     }, []);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(CHAT_FOCUS_MODE_STORAGE_KEY, focusMode ? "1" : "0");
+        } catch {
+            // ignore localStorage issues
+        }
+    }, [focusMode]);
+
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            const isToggleShortcut = (event.metaKey || event.ctrlKey) && event.key === "\\";
+            if (isToggleShortcut) {
+                event.preventDefault();
+                setFocusMode((prev) => !prev);
+                if (sideNavActiveItem !== "chat") {
+                    setSideNavActiveItem("chat");
+                }
+                return;
+            }
+            if (event.key === "Escape" && focusMode) {
+                setFocusMode(false);
+            }
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [focusMode, sideNavActiveItem]);
 
     const stop = () => {
         try {
@@ -549,6 +584,8 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
                     lastError={lastError}
                     lastRetrieved={lastRetrieved}
                     onNavigateToChat={navigateToChat}
+                    focusMode={focusMode}
+                    onToggleFocusMode={() => setFocusMode((prev) => !prev)}
                 />
             );
         }
@@ -567,10 +604,12 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
 
     const renderMainContent = () => {
         const isHome = sideNavActiveItem === 'home';
+        const showFocusToggle = sideNavActiveItem === "chat";
+        const hideTopBar = isHome || (sideNavActiveItem === "chat" && focusMode);
         return (
             <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 {/* Global top bar — hidden on home screen */}
-                {!isHome && (
+                {!hideTopBar && (
                     <Box
                         sx={(theme) => ({
                             height: 56,
@@ -582,14 +621,29 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
                             backdropFilter: 'blur(12px)',
                         })}
                     >
-                        <ChatThreadTopBar
-                            starting={starting}
-                            chatModelStatus={chatModelStatus}
-                            homeLabel="Home"
-                            sessionLabel={NAV_LABELS[sideNavActiveItem]}
-                            statusLabel={chatModelStatus?.status ?? 'unknown'}
-                            onHomeClick={() => setSideNavActiveItem('home')}
-                        />
+                        <Box sx={{ display: "flex", alignItems: "center", width: "100%", gap: 1.25 }}>
+                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                                <ChatThreadTopBar
+                                    starting={starting}
+                                    chatModelStatus={chatModelStatus}
+                                    homeLabel="Home"
+                                    sessionLabel={NAV_LABELS[sideNavActiveItem]}
+                                    statusLabel={chatModelStatus?.status ?? 'unknown'}
+                                    onHomeClick={() => setSideNavActiveItem('home')}
+                                />
+                            </Box>
+                            {showFocusToggle && (
+                                <Button
+                                    size="small"
+                                    variant={focusMode ? "contained" : "outlined"}
+                                    startIcon={<Icon sx={{ fontSize: 16 }}>fullscreen</Icon>}
+                                    onClick={() => setFocusMode((prev) => !prev)}
+                                    sx={{ textTransform: "none", whiteSpace: "nowrap" }}
+                                >
+                                    Focus
+                                </Button>
+                            )}
+                        </Box>
                     </Box>
                 )}
                 {renderScreen()}
@@ -609,6 +663,7 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
                 />
             }
             mainCanvas={renderMainContent()}
+            hideSidebar={focusMode && sideNavActiveItem === "chat"}
         />
     );
 }

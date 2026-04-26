@@ -1,7 +1,7 @@
 import { Box, Button, Typography, Icon } from '@mui/material';
 import ThemeToggleButton from '../ui/ThemeToggleButton';
 
-type NavKey = 'chat' | 'files' | 'vault' | 'history' | 'storage' | 'help';
+export type NavKey = 'home' | 'chat' | 'files' | 'vault' | 'history' | 'settings' | 'about';
 
 type NavItemProps = {
     icon: React.ReactNode;
@@ -129,7 +129,7 @@ function SidebarNav({
                 </Box>
             </Box>
 
-            {/* New Chat Button: CTA (Call to Action) */}
+            {/* New Chat Button */}
             <Box sx={{ px: 2, mb: 4 }}>
                 <Button
                     fullWidth
@@ -149,6 +149,12 @@ function SidebarNav({
             {/* Primary nav */}
             <Box sx={{ flex: 1 }}>
                 <NavItem
+                    icon={<Icon>home</Icon>}
+                    label="Home"
+                    active={activeItem === 'home'}
+                    onClick={() => onSelect('home')}
+                />
+                <NavItem
                     icon={<Icon>chat_bubble</Icon>}
                     label="Chat"
                     active={activeItem === 'chat'}
@@ -161,8 +167,8 @@ function SidebarNav({
                     onClick={() => onSelect('files')}
                 />
                 <NavItem
-                    icon={<Icon>database</Icon>}
-                    label="Vault"
+                    icon={<Icon>hub</Icon>}
+                    label="Vault / Apps"
                     active={activeItem === 'vault'}
                     onClick={() => onSelect('vault')}
                 />
@@ -177,16 +183,16 @@ function SidebarNav({
             {/* Footer nav */}
             <Box sx={{ mt: 'auto' }}>
                 <NavItem
-                    icon={<Icon>hard_drive</Icon>}
-                    label="Storage"
-                    active={activeItem === 'storage'}
-                    onClick={() => onSelect('storage')}
+                    icon={<Icon>settings</Icon>}
+                    label="Settings"
+                    active={activeItem === 'settings'}
+                    onClick={() => onSelect('settings')}
                 />
                 <NavItem
-                    icon={<Icon>help</Icon>}
-                    label="Help"
-                    active={activeItem === 'help'}
-                    onClick={() => onSelect('help')}
+                    icon={<Icon>shield</Icon>}
+                    label="Privacy"
+                    active={activeItem === 'about'}
+                    onClick={() => onSelect('about')}
                 />
                 <ThemeToggleButton
                     mode={selectedTheme}

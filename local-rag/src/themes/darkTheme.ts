@@ -10,17 +10,17 @@ const darkTheme = createTheme({
         mode: 'dark',
 
         primary: {
-            main: '#D1BCFF',
-            light: '#EADEFF',
-            dark: '#A882FF',
-            contrastText: '#4D219F',
+            main: '#FCA311',        // Orange
+            light: '#FDB944',
+            dark: '#D98800',
+            contrastText: '#000000',
         },
 
         secondary: {
-            main: '#AECCCC',
-            light: '#CAE8E8',
-            dark: '#A0BEBE',
-            contrastText: '#294545',
+            main: '#1A1A1A',        // Dark Gray
+            light: '#2A2A2A',
+            dark: '#111111',
+            contrastText: '#FFFFFF',
         },
 
         error: {
@@ -45,44 +45,44 @@ const darkTheme = createTheme({
         },
 
         background: {
-            default: '#0E0E0E',
-            paper: '#131313',
+            default: '#000000',
+            paper: '#000000',
         },
 
         text: {
-            primary: '#E7E5E4',
-            secondary: '#ACABAA',
-            disabled: '#767575',
+            primary: '#FFFFFF',
+            secondary: '#AAAAAA',
+            disabled: '#666666',
         },
 
-        divider: '#383838',
+        divider: '#252525',
 
         action: {
-            active: '#D1BCFF',
-            hover: 'rgba(209, 188, 255, 0.08)',
-            selected: 'rgba(209, 188, 255, 0.14)',
-            disabled: 'rgba(231, 229, 228, 0.3)',
+            active: '#FCA311',
+            hover: 'rgba(252, 163, 17, 0.08)',
+            selected: 'rgba(252, 163, 17, 0.14)',
+            disabled: 'rgba(255, 255, 255, 0.3)',
             disabledBackground: 'rgba(72, 72, 72, 0.4)',
-            focus: 'rgba(209, 188, 255, 0.22)',
+            focus: 'rgba(252, 163, 17, 0.22)',
         },
 
         surface: {
-            base: '#0E0E0E',
-            low: '#131313',
-            mid: '#191A1A',
-            high: '#1F2020',
-            highest: '#262626',
+            base: '#0A0F1E',        // Very dark Prussian Blue (sidebar)
+            low: '#0A0A0A',
+            mid: '#14213D',         // Prussian Blue (cards)
+            high: '#1A2A4A',
+            highest: '#213460',
             lowest: '#000000',
-            bright: '#2C2C2C',
-            tint: '#D1BCFF',
-            inverse: '#FCF9F8',
+            bright: '#1A1A1A',
+            tint: '#FCA311',
+            inverse: '#FFFFFF',
         },
 
-        textTertiary: '#565555',
+        textTertiary: '#3A3A3A',
 
         outline: {
-            main: '#767575',
-            variant: '#484848',
+            main: '#3A3A3A',
+            variant: '#252525',
         },
 
         status: {
@@ -180,10 +180,10 @@ const darkTheme = createTheme({
                     minHeight: 36,
                 },
                 containedPrimary: ({ theme }) => ({
-                    backgroundColor: '#A882FF',
+                    backgroundColor: '#FCA311',
                     color: '#000000',
                     '&:hover': {
-                        backgroundColor: '#9B75F1',
+                        backgroundColor: '#FDB944',
                     },
                     '&:focus-visible': {
                         outline: `2px solid ${theme.palette.primary.main}`,
@@ -191,23 +191,23 @@ const darkTheme = createTheme({
                     },
                 }),
                 containedSecondary: {
-                    backgroundColor: '#244040',
-                    color: '#A7C5C5',
+                    backgroundColor: '#14213D',
+                    color: '#FFFFFF',
                     '&:hover': {
-                        backgroundColor: '#294545',
+                        backgroundColor: '#1A2A4A',
                     },
                 },
                 outlined: ({ theme }) => ({
                     borderColor: theme.palette.outline.variant,
                     '&:hover': {
                         borderColor: theme.palette.primary.main,
-                        backgroundColor: 'rgba(209, 188, 255, 0.06)',
+                        backgroundColor: 'rgba(252, 163, 17, 0.06)',
                     },
                 }),
                 text: ({ theme }) => ({
                     color: theme.palette.primary.main,
                     '&:hover': {
-                        backgroundColor: 'rgba(209, 188, 255, 0.08)',
+                        backgroundColor: 'rgba(252, 163, 17, 0.08)',
                     },
                 }),
             },
@@ -220,7 +220,7 @@ const darkTheme = createTheme({
                     borderRadius: 4,
                     '&:hover': {
                         color: theme.palette.primary.main,
-                        backgroundColor: 'rgba(209, 188, 255, 0.08)',
+                        backgroundColor: 'rgba(252, 163, 17, 0.08)',
                     },
                 }),
             },
@@ -243,7 +243,7 @@ const darkTheme = createTheme({
                     backgroundColor: theme.palette.surface.mid,
                     borderRadius: 4,
                     '& .MuiOutlinedInput-notchedOutline': {
-                        borderColor: 'rgba(72, 72, 72, 0.3)',
+                        borderColor: 'rgba(37, 37, 37, 0.3)',
                     },
                     '&:hover .MuiOutlinedInput-notchedOutline': {
                         borderColor: theme.palette.primary.main,

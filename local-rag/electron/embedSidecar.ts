@@ -1,4 +1,5 @@
 import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
+import fs from "node:fs";
 import { SidecarStatus } from "./electron";
 import { app } from "electron";
 import path from "node:path";
@@ -22,8 +23,6 @@ export class EmbedSidecar {
 
     // Helpers
     private resourcesBase() {
-        // In production, packaged files live under process.resourcesPath
-        // In dev, use your repo resources folder
         return app.isPackaged
             ? process.resourcesPath
             : path.resolve(app.getAppPath(), "resources");
@@ -31,8 +30,6 @@ export class EmbedSidecar {
 
     private binPath() {
         const base = this.resourcesBase();
-        // mac example; you’ll need per-platform logic
-        // If you ship other platforms, choose executable names accordingly.
         const exe = process.platform === "win32" ? "llama-server.exe" : "llama-server";
         return path.join(base, "bin", exe);
     }
@@ -40,7 +37,6 @@ export class EmbedSidecar {
     private embedModelPath() {
         const base = this.resourcesBase();
         return path.join(base, "models", "nomic-embed-text-v2-moe.Q4_K_M.gguf");
-
     }
 
     private async getFreePort(): Promise<number> {
@@ -50,11 +46,34 @@ export class EmbedSidecar {
                 const addr = srv.address();
                 srv.close(() => {
                     if (typeof addr === "object" && addr?.port) resolve(addr.port);
-                    else reject(new Error("Failed to acquire free port for embedd model"));
+                    else reject(new Error("Failed to acquire free port for embed model"));
                 });
             });
             srv.on("error", reject);
         });
+    }
+
+    private async waitUntilReady(
+        baseUrl: string,
+        abortSignal: { aborted: boolean; reason?: Error },
+        timeoutMs = 60_000
+    ) {
+        const pollUrl = `${baseUrl}/health`;
+        console.log(`[embed] polling readiness at ${pollUrl}`);
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+            if (abortSignal.aborted) {
+                throw abortSignal.reason ?? new Error("embed-server process exited before becoming ready");
+            }
+            try {
+                const res = await fetch(pollUrl);
+                if (res.ok) return;
+            } catch {
+                // not ready yet
+            }
+            await new Promise((r) => setTimeout(r, 500));
+        }
+        throw new Error(`Nomic embedding sidecar did not become ready within ${timeoutMs / 1000}s — check that the model file exists`);
     }
 
     // Lifecycle
@@ -78,15 +97,30 @@ export class EmbedSidecar {
         const bin = this.binPath();
         const model = this.embedModelPath();
 
+        // Pre-flight: verify binary and model exist before trying to spawn
+        if (!fs.existsSync(bin)) {
+            this.status = "error";
+            throw new Error(`llama-server binary not found at: ${bin}`);
+        }
+        if (!fs.existsSync(model)) {
+            this.status = "error";
+            throw new Error(
+                `Embedding model not found at: ${model}\n` +
+                `Place "nomic-embed-text-v2-moe.Q4_K_M.gguf" in the resources/models/ directory.`
+            );
+        }
+
         const args = [
             "--host", this.hostUrl,
             "--port", String(this.port),
             "-m", model,
             "--embeddings",
-            "--pooling", "mean",    // nomic-embed uses mean pooling
-            "--ctx-size", "8192",   // nomic-v2 supports up to 8192 tokens
-            "--batch-size", "512",  // tune to your RAM; affects throughput
+            "--pooling", "mean",
+            "--ctx-size", "8192",
+            "--batch-size", "512",
         ];
+
+        console.log(`[embed] spawning: ${bin} ${args.join(" ")}`);
 
         this.proc = spawn(bin, args, {
             cwd: path.dirname(bin),
@@ -101,27 +135,48 @@ export class EmbedSidecar {
             stdio: "pipe",
         });
 
-        this.proc.stderr.on("data", (d) => {
-            // console.error("[embed:err]", d.toString());
+        // Shared abort signal so waitUntilReady can stop immediately on exit
+        const abort: { aborted: boolean; reason?: Error } = { aborted: false };
+        let stderrBuffer = "";
+
+        this.proc.stdout.on("data", (d: Buffer) => {
+            console.log("[embed:stdout]", d.toString().trimEnd());
+        });
+
+        this.proc.stderr.on("data", (d: Buffer) => {
+            const text = d.toString();
+            stderrBuffer += text;
+            console.error("[embed:stderr]", text.trimEnd());
         });
 
         this.proc.on("error", (err) => {
+            console.error("[embed] failed to spawn process:", err.message);
+            abort.aborted = true;
+            abort.reason = new Error(`embed-server spawn error: ${err.message}`);
             this.proc = null;
             this.status = "error";
-            // console.error("embed-server process error:", err);
         });
 
         this.proc.on("exit", (code, signal) => {
+            console.error(`[embed] process exited — code=${code} signal=${signal}`);
+            if (stderrBuffer) {
+                console.error("[embed] last stderr output:\n", stderrBuffer.slice(-2000));
+            }
+            if (!abort.aborted) {
+                abort.aborted = true;
+                abort.reason = new Error(
+                    `embed-server exited early (code=${code}, signal=${signal})` +
+                    (stderrBuffer ? `\nLast output: ${stderrBuffer.slice(-500)}` : "")
+                );
+            }
             this.proc = null;
-            // If it dies unexpectedly while starting/running, mark error
             this.status = (this.status === "starting" || this.status === "running") ? "error" : "stopped";
-            // console.error(`embed-server exited. code=${code} signal=${signal}`);
         });
 
         try {
-            await this.waitUntilReady(this.baseUrl);
+            await this.waitUntilReady(this.baseUrl, abort);
             this.status = "running";
-            console.log("embed-server is running at ", this.baseUrl);
+            console.log("[embed] embed-server is running at", this.baseUrl);
         } catch (e) {
             this.status = "error";
             this.stop();
@@ -141,58 +196,43 @@ export class EmbedSidecar {
         return { status: this.status, port: this.port, baseUrl: this.baseUrl };
     }
 
-    private async waitUntilReady(baseUrl: string, timeoutMs = 120_000) {
-        const start = Date.now();
-        while (Date.now() - start < timeoutMs) {
-            try {
-                const res = await fetch(`${baseUrl}/health`); // Canonical choice for checking llama.cpp server status
-                if (res.ok) return;
-            } catch {
-                // ignore
-            }
-            await new Promise((r) => setTimeout(r, 250));
-        }
-        throw new Error("Nomic embedding sidecar failed to become ready");
-    }
-
-    // Embedding calls 
+    // Embedding calls
     async embed(input: string | string[]) {
-        if (this.status !== "running") await this.start()
+        if (this.status !== "running") await this.start();
 
         const res = await fetch(`${this.baseUrl}/v1/embeddings`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ input }),
-        })
+        });
 
         if (!res.ok) {
-            const txt = await res.text().catch(() => "")
-            throw new Error(`Embeddings HTTP ${res.status}: ${txt}`)
+            const txt = await res.text().catch(() => "");
+            throw new Error(`Embeddings HTTP ${res.status}: ${txt}`);
         }
 
-        return (await res.json()) as EmbeddingResponse
+        return (await res.json()) as EmbeddingResponse;
     }
 
     async embedOne(text: string): Promise<number[]> {
-        const json = await this.embed(text)
-        const vector = json.data?.[0]?.embedding
+        const json = await this.embed(text);
+        const vector = json.data?.[0]?.embedding;
 
         if (!vector || !Array.isArray(vector)) {
-            throw new Error("Embedding response missing data[0].embedding")
+            throw new Error("Embedding response missing data[0].embedding");
         }
 
-        return vector
+        return vector;
     }
 
     async embedMany(texts: string[]): Promise<number[][]> {
-        const json = await this.embed(texts)
-        const vectors = json.data?.map((item) => item.embedding)
+        const json = await this.embed(texts);
+        const vectors = json.data?.map((item) => item.embedding);
 
         if (!vectors || vectors.length !== texts.length) {
-            throw new Error("Embedding response length mismatch")
+            throw new Error("Embedding response length mismatch");
         }
 
-        return vectors
+        return vectors;
     }
-
 }

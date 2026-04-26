@@ -1,7 +1,9 @@
-import { Box, Button, Typography, Tooltip, Icon, FormControlLabel, Checkbox } from "@mui/material";
+import { Box, Button, Checkbox, CircularProgress, FormControlLabel, Icon, IconButton, Tooltip, Typography } from "@mui/material";
+import { useTheme, alpha } from "@mui/material/styles";
 import { useState } from "react";
 
 function FileWatcherPicker() {
+    const theme = useTheme();
     const [watchedPath, setWatchedPath] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -30,7 +32,7 @@ function FileWatcherPicker() {
                 setError("Failed to open directory. Please try again.");
                 setLoading(false);
             }
-        } catch (err) {
+        } catch {
             setError("An unexpected error occurred.");
             setLoading(false);
         }
@@ -43,97 +45,112 @@ function FileWatcherPicker() {
     };
 
     return (
-        <Box
-            sx={{
-                p: 3,
-                borderRadius: 2,
-                boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
-                transition: "transform 0.2s ease, box-shadow 0.2s ease",
-            }}
-        >
-            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
-                <Typography variant="subtitle1" fontWeight="medium" sx={{ color: "#333" }}>
-                    📁 File Watcher
-                </Typography>
-                <Tooltip title="Cancel">
-                    <Icon onClick={handleCancel} sx={{ color: "#999" }}>
-                        error
-                    </Icon>
+        <Box>
+            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1.5 }}>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+                    <Icon sx={{ fontSize: 16, color: theme.palette.primary.main }}>folder_open</Icon>
+                    <Typography sx={{ fontSize: '0.82rem', fontWeight: 600, color: theme.palette.text.primary }}>
+                        Choose a folder to watch
+                    </Typography>
+                </Box>
+                <Tooltip title="Reset">
+                    <IconButton size="small" onClick={handleCancel} sx={{ p: 0.5 }}>
+                        <Icon sx={{ fontSize: 16, color: theme.palette.text.secondary }}>close</Icon>
+                    </IconButton>
                 </Tooltip>
             </Box>
 
-            {loading && (
-                <Box sx={{ mb: 2, borderRadius: 1, bgcolor: "#f5f5f5" }}>
-                    <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", width: "100%" }}>
-                        <Box sx={{ width: 20, height: 20, bgcolor: "#2196f3", borderRadius: 5, animation: "pulse 1.5s infinite" }}>
-                            <Icon>refresh</Icon>
-                        </Box>
-                    </Box>
-                </Box>
-            )}
-
             {error && (
-                <Box sx={{ mb: 2, bgcolor: "#ffebee", borderRadius: 1, padding: 1 }}>
-                    <Typography variant="body2" color="#c62828">
-                        ⚠️ {error}
+                <Box
+                    sx={{
+                        mb: 1.5,
+                        px: 1.5,
+                        py: 1,
+                        borderRadius: 1,
+                        backgroundColor: alpha(theme.palette.error.main, 0.08),
+                        border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`,
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 0.75,
+                    }}
+                >
+                    <Icon sx={{ fontSize: 15, color: theme.palette.error.main, mt: 0.15, flexShrink: 0 }}>warning</Icon>
+                    <Typography sx={{ fontSize: '0.78rem', color: theme.palette.error.main }}>
+                        {error}
                     </Typography>
                 </Box>
             )}
 
             <Button
                 variant={loading ? "outlined" : "contained"}
-                startIcon={loading ? <Icon>refresh</Icon> : <Icon>folder</Icon>}
+                startIcon={loading ? <CircularProgress size={14} color="inherit" /> : <Icon>folder</Icon>}
                 onClick={handlePick}
                 disabled={loading}
-                sx={{
-                    borderRadius: 1,
-                    fontWeight: 600,
-                    transition: "all 0.2s ease",
-                    "&:hover": {
-                        bgcolor: "#e3f2fd",
-                        transform: "translateY(-1px)",
-                        boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
-                    },
-                    "&:disabled": {
-                        opacity: 0.7,
-                        cursor: "not-allowed",
-                        bgcolor: "#f5f5f5",
-                        transform: "none",
-                        boxShadow: "none",
-                    },
-                }}
+                sx={{ mb: 1.25, fontSize: '0.8rem' }}
             >
-                {loading ? "Opening…" : "Choose folder to watch"}
+                {loading ? "Indexing…" : "Choose folder"}
             </Button>
-            <FormControlLabel
-                sx={{ mt: 1 }}
-                control={
-                    <Checkbox
-                        checked={includeCodeFiles}
-                        onChange={(event) => setIncludeCodeFiles(event.target.checked)}
-                    />
-                }
-                label="Include code files (.ts, .js, .py, etc.)"
-            />
-            <FormControlLabel
-                control={
-                    <Checkbox
-                        checked={indexAllFiles}
-                        onChange={(event) => setIndexAllFiles(event.target.checked)}
-                    />
-                }
-                label="Index all files (best effort, no skip filtering)"
-            />
+
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                <FormControlLabel
+                    control={
+                        <Checkbox
+                            size="small"
+                            checked={includeCodeFiles}
+                            onChange={(e) => setIncludeCodeFiles(e.target.checked)}
+                            sx={{ py: 0.5 }}
+                        />
+                    }
+                    label={
+                        <Typography sx={{ fontSize: '0.78rem', color: theme.palette.text.secondary }}>
+                            Include code files (.ts, .js, .py, etc.)
+                        </Typography>
+                    }
+                />
+                <FormControlLabel
+                    control={
+                        <Checkbox
+                            size="small"
+                            checked={indexAllFiles}
+                            onChange={(e) => setIndexAllFiles(e.target.checked)}
+                            sx={{ py: 0.5 }}
+                        />
+                    }
+                    label={
+                        <Typography sx={{ fontSize: '0.78rem', color: theme.palette.text.secondary }}>
+                            Index all files (no skip filtering)
+                        </Typography>
+                    }
+                />
+            </Box>
 
             {watchedPath && (
-                <Box sx={{ mt: 2, p: 1, bgcolor: "#f9f9f9", borderRadius: 1 }}>
-                    <Typography variant="body2" color="#666" sx={{ fontSize: 14, fontWeight: 500 }}>
-                        📂 Watching: <code>{watchedPath}</code>
-                    </Typography>
+                <Box
+                    sx={{
+                        mt: 1.5,
+                        p: 1.5,
+                        borderRadius: 1.5,
+                        backgroundColor: alpha(theme.palette.primary.main, 0.06),
+                        border: `1px solid ${alpha(theme.palette.primary.main, 0.18)}`,
+                    }}
+                >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: stats ? 0.75 : 0 }}>
+                        <Icon sx={{ fontSize: 14, color: '#4CAF50', flexShrink: 0 }}>check_circle</Icon>
+                        <Typography
+                            sx={{
+                                fontSize: '0.78rem',
+                                color: theme.palette.text.primary,
+                                fontWeight: 600,
+                                wordBreak: 'break-all',
+                            }}
+                        >
+                            {watchedPath}
+                        </Typography>
+                    </Box>
                     {stats && (
-                        <Typography variant="body2" color="#666" sx={{ mt: 1, fontSize: 13 }}>
-                            Indexed {stats.indexed} files ({stats.textIndexed} text, {stats.codeIndexed} code, {stats.imageIndexed} images), skipped {stats.skipped}, scanned {stats.scanned}
-                            {stats.lastIndexedAtMs ? `, last update ${new Date(stats.lastIndexedAtMs).toLocaleTimeString()}` : ""}
+                        <Typography sx={{ fontSize: '0.72rem', color: theme.palette.text.secondary, lineHeight: 1.6 }}>
+                            {stats.indexed} indexed · {stats.textIndexed} text · {stats.codeIndexed} code · {stats.imageIndexed} images · {stats.skipped} skipped
+                            {stats.lastIndexedAtMs ? ` · ${new Date(stats.lastIndexedAtMs).toLocaleTimeString()}` : ""}
                         </Typography>
                     )}
                 </Box>

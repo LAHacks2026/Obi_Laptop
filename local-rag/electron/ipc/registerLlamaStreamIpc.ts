@@ -31,8 +31,18 @@ export function registerLlamaStreamIpc() {
         const toolAccumulator = new ToolCallAccumulator();
 
         try {
+            const llamaStatus = llama.getStatus();
+            if (llamaStatus.status !== "running" || !llamaStatus.baseUrl) {
+                event.sender.send("llama:chat_stream_error", {
+                    requestId,
+                    error: `Local AI is not running (status: ${llamaStatus.status}). Check that model files are present in resources/models/ and restart Obi.`,
+                });
+                streamAborters.delete(wcId);
+                return;
+            }
+
             // Start fetch to local server with "stream: true" (SSE)
-            const chatPort = llama.getStatus().baseUrl;
+            const chatPort = llamaStatus.baseUrl;
             const res = await fetch(`${chatPort}/v1/chat/completions`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -46,10 +56,15 @@ export function registerLlamaStreamIpc() {
                 }),
             });
 
-            // If fetch request fails, send error
+            // If fetch request fails, send error to renderer
             if (!res.ok || !res.body) {
                 const txt = await res.text().catch(() => "");
-                console.log(`HTTP ${res.status}: ${txt}`);
+                console.error(`[llama:stream] HTTP ${res.status}: ${txt}`);
+                event.sender.send("llama:chat_stream_error", {
+                    requestId,
+                    error: `Local AI returned HTTP ${res.status}. The model may still be loading — try again in a moment.`,
+                });
+                streamAborters.delete(wcId);
                 return;
             }
 
@@ -81,8 +96,7 @@ export function registerLlamaStreamIpc() {
 
                         if (data === "[DONE]") {
                             const finalToolCalls = toolAccumulator.getAll();
-                            const toolResponse = await executeToolCalls(finalToolCalls);
-                            streamAborters.delete(wcId);
+                            await executeToolCalls(finalToolCalls);
                             return;
                         }
 
@@ -112,8 +126,17 @@ export function registerLlamaStreamIpc() {
                 }
             }
         } catch (e: any) {
-            console.log("Abort Error", e);
+            if (e?.name !== "AbortError") {
+                console.error("[llama:stream] error:", e?.message ?? e);
+                event.sender.send("llama:chat_stream_error", {
+                    requestId,
+                    error: e?.message ?? String(e),
+                });
+            }
         } finally {
+            // Fires on every exit path: [DONE] return, natural stream end, error, or abort.
+            // The renderer ignores duplicates (isGenerating false→false is a no-op).
+            event.sender.send("llama:chat_stream_done", { requestId });
             streamAborters.delete(event.sender.id);
         }
     });

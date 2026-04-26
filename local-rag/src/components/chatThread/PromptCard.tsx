@@ -24,7 +24,7 @@ function PromptCard({ icon, title, body, wide, onClick }: PromptCardProps) {
                 gridColumn: wide ? { md: "span 2" } : undefined,
                 "&:hover": {
                     backgroundColor: theme.palette.surface.high,
-                    borderColor: "rgba(72,72,72,0.35)",
+                    borderColor: theme.palette.outline.variant,
                 },
             }}
         >

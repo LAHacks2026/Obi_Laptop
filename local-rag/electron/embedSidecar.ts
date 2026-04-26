@@ -143,12 +143,6 @@ export class EmbedSidecar {
             console.log("[embed:stdout]", d.toString().trimEnd());
         });
 
-        this.proc.stderr.on("data", (d: Buffer) => {
-            const text = d.toString();
-            stderrBuffer += text;
-            console.error("[embed:stderr]", text.trimEnd());
-        });
-
         this.proc.on("error", (err) => {
             console.error("[embed] failed to spawn process:", err.message);
             abort.aborted = true;

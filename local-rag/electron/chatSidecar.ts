@@ -32,7 +32,7 @@ export class LlamaSidecar {
 
     private chatModelPath() {
         const base = this.resourcesBase();
-        return path.join(base, "models", "Qwen3.5-2B-Q4_K_M.gguf");
+        return path.join(base, "models", "gemma-4-E2B-it-Q4_K_M.gguf");
     }
 
     private async getFreePort(): Promise<number> {
@@ -139,7 +139,6 @@ export class LlamaSidecar {
         this.proc.stderr.on("data", (d: Buffer) => {
             const text = d.toString();
             stderrBuffer += text;
-            console.error("[llama:stderr]", text.trimEnd());
         });
 
         this.proc.on("error", (err) => {
@@ -152,9 +151,7 @@ export class LlamaSidecar {
 
         this.proc.on("exit", (code, signal) => {
             console.error(`[llama] process exited — code=${code} signal=${signal}`);
-            if (stderrBuffer) {
-                console.error("[llama] last stderr output:\n", stderrBuffer.slice(-2000));
-            }
+
             if (!abort.aborted) {
                 abort.aborted = true;
                 abort.reason = new Error(

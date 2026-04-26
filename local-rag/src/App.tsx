@@ -4,7 +4,6 @@ import type { SearchResult, Msg, LlamaStatus } from "./types/global";
 import AppShell from "./components/layout/AppShell";
 import SidebarNav, { type NavKey } from "./components/layout/SidebarNav";
 import MainCanvas from "./components/layout/MainCanvas";
-import EmptyState from "./components/ui/EmptyState";
 import ChatThreadTopBar from "./components/chatThread/ChatThreadTopBar";
 
 // Screens
@@ -12,6 +11,7 @@ import HomeScreen from "./components/screens/HomeScreen";
 import ChatScreen from "./components/screens/ChatScreen";
 import FilesScreen from "./components/screens/FilesScreen";
 import VaultAppsScreen from "./components/screens/VaultAppsScreen";
+import HistoryScreen from "./components/screens/HistoryScreen.tsx";
 import SettingsScreen from "./components/screens/SettingsScreen";
 import PrivacyAboutScreen from "./components/screens/PrivacyAboutScreen";
 
@@ -41,6 +41,23 @@ const MAX_RAG_PREFIX_CHARS = 3500;
 const MAX_VISUAL_QA_CONTEXT_CHARS = 1200;
 const MAX_AUGMENTED_USER_CHARS = 6000;
 const MAX_HISTORY_MESSAGES = 6; // excludes the leading system prompt
+const CHAT_HISTORY_STORAGE_KEY = "obi-chat-history-v1";
+const MAX_STORED_CHAT_SESSIONS = 30;
+const DEFAULT_SYSTEM_PROMPT =
+    "You are a helpful assistant for local RAG. " +
+    "Always ground answers in retrieved context when available. " +
+    "When retrieved image captions are present, treat them as visual observations. " +
+    "When OCR text is present, treat it as extracted text from the image. " +
+    "Do not say you cannot see images if caption context is provided.";
+
+type ChatSession = {
+    id: string;
+    title: string;
+    createdAtMs: number;
+    updatedAtMs: number;
+    messages: Msg[];
+    lastRetrieved: SearchResult[];
+};
 
 function App({ selectedTheme, onToggleTheme }: AppProps) {
     /********************************************
@@ -64,12 +81,7 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
     const [messages, setMessages] = useState<Msg[]>([
         {
             role: "system",
-            content:
-                "You are a helpful assistant for local RAG. " +
-                "Always ground answers in retrieved context when available. " +
-                "When retrieved image captions are present, treat them as visual observations. " +
-                "When OCR text is present, treat it as extracted text from the image. " +
-                "Do not say you cannot see images if caption context is provided.",
+            content: DEFAULT_SYSTEM_PROMPT,
         },
     ]);
 
@@ -78,12 +90,39 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
     const [lastImageResults, setLastImageResults] = useState<SearchResult[]>([]);
     const [isGenerating, setIsGenerating] = useState(false);
     const [lastError, setLastError] = useState<string | null>(null);
+    const [chatHistory, setChatHistory] = useState<ChatSession[]>(loadChatHistory);
+    const [activeSessionId, setActiveSessionId] = useState(() => createSessionId());
 
     const messagesRef = useRef<Msg[]>(messages);
 
     useEffect(() => {
         messagesRef.current = messages;
     }, [messages]);
+
+    useEffect(() => {
+        const nonSystemMessages = messages.filter((message) => message.role !== "system");
+        if (!nonSystemMessages.length) return;
+
+        setChatHistory((prev) => {
+            const now = Date.now();
+            const existing = prev.find((session) => session.id === activeSessionId);
+            const createdAtMs = existing?.createdAtMs ?? now;
+            const nextSession: ChatSession = {
+                id: activeSessionId,
+                title: deriveSessionTitle(messages),
+                createdAtMs,
+                updatedAtMs: now,
+                messages: messages.map((message) => ({ ...message })),
+                lastRetrieved: lastRetrieved.map((result) => ({ ...result })),
+            };
+            const withoutCurrent = prev.filter((session) => session.id !== activeSessionId);
+            const updated = [nextSession, ...withoutCurrent]
+                .sort((a, b) => b.updatedAtMs - a.updatedAtMs)
+                .slice(0, MAX_STORED_CHAT_SESSIONS);
+            persistChatHistory(updated);
+            return updated;
+        });
+    }, [activeSessionId, lastRetrieved, messages]);
 
     useEffect(() => {
         let mounted = true;
@@ -136,6 +175,41 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
             stop();
         }
         setSideNavActiveItem(item);
+    };
+
+    const startNewChat = () => {
+        if (isGenerating) stop();
+        setSideNavActiveItem("chat");
+        setInput("");
+        setLastError(null);
+        setLastRetrieved([]);
+        setLastImageResults([]);
+        setMessages([{ role: "system", content: DEFAULT_SYSTEM_PROMPT }]);
+        setActiveSessionId(createSessionId());
+    };
+
+    const openHistorySession = (sessionId: string) => {
+        const session = chatHistory.find((item) => item.id === sessionId);
+        if (!session) return;
+        if (isGenerating) stop();
+        setActiveSessionId(session.id);
+        setMessages(session.messages.length ? session.messages.map((m) => ({ ...m })) : [{ role: "system", content: DEFAULT_SYSTEM_PROMPT }]);
+        setLastRetrieved(session.lastRetrieved.map((item) => ({ ...item })));
+        setLastImageResults(session.lastRetrieved.filter((item) => item.modality === "image").map((item) => ({ ...item })));
+        setSideNavActiveItem("chat");
+    };
+
+    const deleteHistorySession = (sessionId: string) => {
+        setChatHistory((prev) => {
+            const updated = prev.filter((session) => session.id !== sessionId);
+            persistChatHistory(updated);
+            return updated;
+        });
+    };
+
+    const clearHistory = () => {
+        setChatHistory([]);
+        persistChatHistory([]);
     };
 
     const send = async () => {
@@ -436,10 +510,12 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
 
             case 'history':
                 return (
-                    <EmptyState
-                        icon="history"
-                        title="No history yet"
-                        description="Your conversation history will appear here in a future update."
+                    <HistoryScreen
+                        sessions={chatHistory}
+                        activeSessionId={activeSessionId}
+                        onOpenSession={openHistorySession}
+                        onDeleteSession={deleteHistorySession}
+                        onClearAll={clearHistory}
                     />
                 );
 
@@ -527,7 +603,7 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
                 <SidebarNav
                     activeItem={sideNavActiveItem}
                     onSelect={handleSelectNav}
-                    onNewChat={() => handleSelectNav('chat')}
+                    onNewChat={startNewChat}
                     selectedTheme={selectedTheme}
                     onThemeChange={onToggleTheme}
                 />
@@ -538,6 +614,47 @@ function App({ selectedTheme, onToggleTheme }: AppProps) {
 }
 
 export default App;
+
+function createSessionId(): string {
+    return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+}
+
+function deriveSessionTitle(messages: Msg[]): string {
+    const firstUserMessage = messages.find((message) => message.role === "user" && message.content?.trim());
+    if (!firstUserMessage) return "Untitled chat";
+    return clampText(firstUserMessage.content.trim().replace(/\s+/g, " "), 70);
+}
+
+function loadChatHistory(): ChatSession[] {
+    try {
+        const raw = localStorage.getItem(CHAT_HISTORY_STORAGE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw) as ChatSession[];
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .filter((item) => item && typeof item.id === "string" && Array.isArray(item.messages))
+            .map((item) => ({
+                id: item.id,
+                title: typeof item.title === "string" && item.title.trim() ? item.title : "Untitled chat",
+                createdAtMs: Number(item.createdAtMs ?? Date.now()),
+                updatedAtMs: Number(item.updatedAtMs ?? Date.now()),
+                messages: item.messages,
+                lastRetrieved: Array.isArray(item.lastRetrieved) ? item.lastRetrieved : [],
+            }))
+            .sort((a, b) => b.updatedAtMs - a.updatedAtMs)
+            .slice(0, MAX_STORED_CHAT_SESSIONS);
+    } catch {
+        return [];
+    }
+}
+
+function persistChatHistory(sessions: ChatSession[]) {
+    try {
+        localStorage.setItem(CHAT_HISTORY_STORAGE_KEY, JSON.stringify(sessions));
+    } catch {
+        // ignore localStorage errors (quota/private mode)
+    }
+}
 
 function sanitizeForPrompt(text: string): string {
     if (!text) return "";

@@ -6,10 +6,16 @@ import { getDb } from "../database.js"
 const MAX_PATH_LEN = 4096
 
 function isIndexedDocumentPath(p: string): boolean {
-    const row = getDb()
+    const db = getDb()
+    const textOrCode = db
         .prepare("SELECT 1 AS ok FROM documents WHERE path = ? LIMIT 1")
         .get(p) as { ok: number } | undefined
-    return Boolean(row)
+    if (textOrCode) return true
+
+    const image = db
+        .prepare("SELECT 1 AS ok FROM image_documents WHERE path = ? LIMIT 1")
+        .get(p) as { ok: number } | undefined
+    return Boolean(image)
 }
 
 function toRealPath(p: string): string {
